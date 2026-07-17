@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -41,15 +42,40 @@ def request(token, method, url, data=None, content_type="application/vnd.github+
         raise GitHubApiError(error.code, message) from error
 
 
-def main():
-    if len(sys.argv) != 2:
-        raise SystemExit("用法: publish_release.py <zip文件>")
+def get_context():
+    return (
+        os.environ["GITHUB_TOKEN"],
+        os.environ["GITHUB_REPOSITORY"],
+        os.environ["GITHUB_REF_NAME"],
+        os.environ["GITHUB_SHA"],
+    )
 
-    token = os.environ["GITHUB_TOKEN"]
-    repository = os.environ["GITHUB_REPOSITORY"]
-    tag = os.environ["GITHUB_REF_NAME"]
-    sha = os.environ["GITHUB_SHA"]
-    asset_path = pathlib.Path(sys.argv[1])
+
+def validate_release():
+    token, repository, tag, sha = get_context()
+    makefile = pathlib.Path("ovl-KeyX/Makefile").read_text(encoding="utf-8")
+    match = re.search(r"^\s*APP_VERSION\s*:=\s*(\S+)", makefile, re.MULTILINE)
+    if not match:
+        raise SystemExit("无法从 ovl-KeyX/Makefile 读取版本号")
+
+    version = match.group(1)
+    if tag != f"v{version}":
+        raise SystemExit(f"标签 {tag} 与项目版本 {version} 不匹配")
+
+    api_base = f"https://api.github.com/repos/{repository}"
+    compare = request(token, "GET", f"{api_base}/compare/{sha}...main")
+    if compare.get("status") not in {"ahead", "identical"}:
+        raise SystemExit("标签提交不属于 main 分支历史")
+
+    env_file = pathlib.Path(os.environ["GITHUB_ENV"])
+    with env_file.open("a", encoding="utf-8") as file:
+        file.write(f"VERSION={version}\n")
+    print(f"验证通过: {tag} -> {sha}")
+
+
+def publish_release(asset_name):
+    token, repository, tag, sha = get_context()
+    asset_path = pathlib.Path(asset_name)
 
     if not asset_path.is_file():
         raise SystemExit(f"发布文件不存在: {asset_path}")
@@ -86,6 +112,18 @@ def main():
         "application/zip",
     )
     print(f"发布完成: {release['html_url']}")
+
+
+def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "validate":
+        validate_release()
+        return
+    if len(sys.argv) == 3 and sys.argv[1] == "publish":
+        publish_release(sys.argv[2])
+        return
+    raise SystemExit(
+        "用法: publish_release.py validate | publish <zip文件>"
+    )
 
 
 if __name__ == "__main__":

@@ -26,21 +26,15 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
-      - name: 验证标签和版本
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
-          version=$(awk '/^[[:space:]]*APP_VERSION[[:space:]]*:=/ { print $3; exit }' ovl-KeyX/Makefile)
-          test -n "$version"
-          test "$GITHUB_REF_NAME" = "v$version"
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-
       - name: 安装打包工具
         run: |
           apt-get update
           apt-get install -y --no-install-recommends python3 zip
+
+      - name: 验证标签和版本
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/publish_release.py validate
 
       - name: 编译
         run: make -j2
@@ -61,4 +55,4 @@ jobs:
       - name: 发布到 GitHub Release
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/publish_release.py "out/KeyX-$VERSION-CN.zip"
+        run: python3 .github/scripts/publish_release.py publish "out/KeyX-$VERSION-CN.zip"
