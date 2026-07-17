@@ -30,7 +30,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
           version=$(awk '/^[[:space:]]*APP_VERSION[[:space:]]*:=/ { print $3; exit }' ovl-KeyX/Makefile)
           test -n "$version"
           test "$GITHUB_REF_NAME" = "v$version"
