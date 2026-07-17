@@ -33,8 +33,7 @@ INCLUDES	:=	include \
 				source/remapper \
 				source/util \
 				source/log \
-				lib/minIni-nx/include \
-				lib/libnotification/libnotification
+				lib/minIni-nx/include
 EXEFS_SRC	:=	exefs_src
 
 #---------------------------------------------------------------------------------

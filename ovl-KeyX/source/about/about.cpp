@@ -1,12 +1,4 @@
 #include "about.hpp"
-#include "qrcodegen.hpp"
-#include "language.hpp"
-
-using qrcodegen::QrCode;
-using qrcodegen::QrSegment;
-
-static const char* WECHAT_PAY_URL = "wxp://f2f0mMaZS-xnKyAZaTyn813TQRZHTRKPzI6UWxldiWDYemRIq8Stt_LPfd1sLyV4v1jR";
-static const char* PAYPAL_URL = "https://www.paypal.com/qrcodes/p2pqrc/7CQ7FTPN26AJ8";
 
 // 关于插件界面构造函数
 AboutPlugin::AboutPlugin()
@@ -51,8 +43,6 @@ tsl::elm::Element* AboutPlugin::createUI()
             "",
             "内存占用：",
             " • 系统模块内存仅占用 550 KB",
-            " • 通知弹窗触发时占用 688 KB",
-            " • 通知弹窗仅在触发时占用内存",
             "",
             "感谢使用本插件！"
         };
@@ -91,34 +81,6 @@ tsl::elm::Element* AboutPlugin::createUI()
             }
             
             renderer->drawString(aboutInfo[i], false, textX, textY, currentFontSize, textColor);
-        }
-        
-        // 捐赠二维码 - 根据语言只生成需要的1个
-        static bool isChinese = LanguageManager::isSimplifiedChinese();
-        static QrCode qr = QrCode::encodeSegments(QrSegment::makeSegments(isChinese ? WECHAT_PAY_URL : PAYPAL_URL), QrCode::Ecc::LOW, 5, 5);
-        const char* donateTitle = isChinese ? "微信捐赠" : "PayPal Donate";
-        
-        int scale = 3;
-        int margin = 6;
-        int qrSize = qr.getSize();
-        int totalSize = qrSize * scale;
-        int qrX = x + w - 20 - totalSize - 15;
-        int qrY = startY + 34;
-        
-        // 标题居中于二维码上方，与 KeyX 同一水平线
-        auto [donateW, donateH] = renderer->getTextDimensions(donateTitle, false, titleFontSize);
-        s32 donateTitleX = qrX + (totalSize - donateW) / 2;
-        tsl::Color donateColor = {0x66, 0xFF, 0x66, 0xFF};  // 绿色
-        renderer->drawString(donateTitle, false, donateTitleX, startY, titleFontSize, donateColor);
-        
-        // 绘制二维码
-        renderer->drawRect(qrX - margin, qrY - margin, totalSize + margin * 2, totalSize + margin * 2, tsl::Color(0xF, 0xF, 0xF, 0xF));
-        for (int qy = 0; qy < qrSize; qy++) {
-            for (int qx = 0; qx < qrSize; qx++) {
-                if (qr.getModule(qx, qy)) {
-                    renderer->drawRect(qrX + qx * scale, qrY + qy * scale, scale, scale, tsl::Color(0x0, 0x0, 0x0, 0xF));
-                }
-            }
         }
     });
     

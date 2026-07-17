@@ -34,10 +34,8 @@ SOURCES		:=	source \
 				source/macro/store \
 				source/util \
 				source/common \
-				source/update \
 				libs/libultrahand/libultra/source \
-				libs/libultrahand/common \
-				libs/lib-QR-Code-generator
+				libs/libultrahand/common
 DATA		:=	data
 INCLUDES	:=	include \
 				include/about \
@@ -47,11 +45,9 @@ INCLUDES	:=	include \
 				include/macro/store \
 				include/util \
 				include/common \
-				include/update \
 				libs/libultrahand/libultra/include \
 				libs/libultrahand/libtesla/include \
-				libs/libultrahand/common \
-				libs/lib-QR-Code-generator
+				libs/libultrahand/common
 				
 
 NO_ICON		:=  1
@@ -67,10 +63,6 @@ CFLAGS	:=	-Wall -Os -ffunction-sections -fdata-sections -flto=auto \
 			$(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__
-
-# Enable translation cache (actual language files loaded from /switch/.overlays/lang/KeyX/)
-UI_OVERRIDE_PATH := /switch/.overlays/lang/KeyX/
-CFLAGS += -DUI_OVERRIDE_PATH="\"$(UI_OVERRIDE_PATH)\""
 
 # Define version macro for use in source code
 CFLAGS += -DAPP_VERSION_STRING="\"v$(APP_VERSION)\""
@@ -89,7 +81,7 @@ CXXFLAGS	:= $(CFLAGS) -fno-exceptions -std=c++20 \
 ASFLAGS	:=	$(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -flto=auto -Wl,--gc-sections -Wl,--as-needed -Wl,-Map,$(notdir $*.map)
 
-LIBS	:= -lcurl -lz -lminizip -lmbedtls -lmbedx509 -lmbedcrypto -lnx
+LIBS	:= -lnx
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing

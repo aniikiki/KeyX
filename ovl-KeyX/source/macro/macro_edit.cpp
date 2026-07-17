@@ -4,7 +4,6 @@
 #include "refresh.hpp"
 #include "ipc.hpp"
 #include "macro_view.hpp"
-#include "i18n.hpp"
 #include <ultra.hpp>
 
 
@@ -24,7 +23,7 @@ namespace {
         if (action.stickL != StickDir::None) text = text + "" + getStickDirIcon(action.stickL);
         if (action.stickR != StickDir::None) text = text + (!text.empty() ? "+" : "") + "" + getStickDirIcon(action.stickR);
         if (action.buttons != 0) text = text + (!text.empty() ? "+" : "") + HidHelper::getCombinedIcons(action.buttons);
-        if (text.empty()) text = i18n("无动作");
+        if (text.empty()) text = "无动作";
         return text;
     }
     

@@ -1,20 +1,12 @@
 #include "macro_detail.hpp"
 #include <ultra.hpp>
-#include <cmath>
-#include "language.hpp"
-#include "info_edit.hpp"
 
 namespace {
-    constexpr s32 ITEM_HEIGHT = 70;
-    
-    // 使用说明布局常量（参考 updater_ui.cpp）
+    // 使用说明布局常量
     constexpr s32 DESC_FONT_SIZE = 18;
     constexpr s32 DESC_LINE_HEIGHT = 26;
     constexpr s32 SCROLLBAR_WIDTH = 3;
     constexpr s32 SCROLLBAR_GAP = 8;
-    
-    constexpr const char* EDIT_URL = "https://macro.dokiss.cn/edit_prop.php?tid=%s&file=%s&lang=%s";
-    constexpr const char* langParam[] = {"zh", "zhh", "en"};
     
     // 使用说明行数据
     struct DescLine {
@@ -111,17 +103,6 @@ namespace {
         return lines;
     }
     
-    double calcBlinkProgress() {
-        u64 ns = armTicksToNs(armGetSystemTick());
-        return (std::cos(2.0 * 3.14159265358979323846 * std::fmod(ns * 0.000000001 - 0.25, 1.0)) + 1.0) * 0.5;
-    }
-    
-    tsl::Color calcBlinkColor(tsl::Color c1, tsl::Color c2, double progress) {
-        return tsl::Color(
-            static_cast<u8>(c2.r + (c1.r - c2.r) * progress),
-            static_cast<u8>(c2.g + (c1.g - c2.g) * progress),
-            static_cast<u8>(c2.b + (c1.b - c2.b) * progress), 0xF);
-    }
 }
 
 // 脚本详情界面
@@ -177,7 +158,7 @@ void MacroDetailGui::drawDetail(tsl::gfx::Renderer* r, s32 x, s32 y, s32 w, s32 
     s32 maxWidth = w - 19 - 15;
     s32 fontSize = 18;
     s32 lineHeight = 26;
-    s32 listY = y + h - 10 - ITEM_HEIGHT;
+    s32 listY = y + h - 10;
     s32 maxY = listY - 20;
     
     auto drawWrappedText = [&](const std::string& content, const std::string& prefix) {
@@ -246,7 +227,7 @@ void MacroDetailGui::drawDetail(tsl::gfx::Renderer* r, s32 x, s32 y, s32 w, s32 
     r->drawString("使用说明:", false, textX, currentY, 20, r->a(tsl::defaultTextColor));
     currentY += 28;
     
-    // 计算区域边界（参考 updater_ui.cpp L314-318）
+    // 计算区域边界
     s32 textMinY = currentY;
     s32 descMaxY = listY - 22;
     s32 visibleHeight = descMaxY - textMinY;
@@ -263,12 +244,12 @@ void MacroDetailGui::drawDetail(tsl::gfx::Renderer* r, s32 x, s32 y, s32 w, s32 
         s32 totalContentHeight = 0;
         auto lines = preprocessDesc(r, m_meta.desc, descMaxWidth, prefixW, totalContentHeight);
         
-        // 更新滚动状态（参考 updater_ui.cpp L327-329）
+        // 更新滚动状态
         m_maxScrollOffset = (totalContentHeight > visibleHeight) ? (totalContentHeight - visibleHeight) : 0;
         if (m_scrollOffset > m_maxScrollOffset) m_scrollOffset = m_maxScrollOffset;
         if (m_scrollOffset < 0) m_scrollOffset = 0;
         
-        // 绘制使用说明（参考 updater_ui.cpp L332-347）
+        // 绘制使用说明
         s32 maxLines = (visibleHeight + DESC_LINE_HEIGHT - 1) / DESC_LINE_HEIGHT;
         s32 contentY = 0, drawY = textMinY, drawnLines = 0;
         
@@ -286,7 +267,7 @@ void MacroDetailGui::drawDetail(tsl::gfx::Renderer* r, s32 x, s32 y, s32 w, s32 
             contentY += DESC_LINE_HEIGHT;
         }
         
-        // 绘制滚动条（参考 updater_ui.cpp L350-360）
+        // 绘制滚动条
         if (m_maxScrollOffset > 0) {
             s32 scrollBarX = x + w - SCROLLBAR_WIDTH;
             s32 scrollBarTotalH = descMaxY - scrollMinY;
@@ -300,28 +281,10 @@ void MacroDetailGui::drawDetail(tsl::gfx::Renderer* r, s32 x, s32 y, s32 w, s32 
         }
     }
     
-    // ========== 底部按钮 ==========
-    double progress = calcBlinkProgress();
-    tsl::Color hlColor = calcBlinkColor(tsl::highlightColor1, tsl::highlightColor2, progress);
-    r->drawBorderedRoundedRect(x, listY, w + 4, ITEM_HEIGHT, 5, 5, r->a(hlColor));
-    
-    s32 keyFont = 23;
-    s32 valFont = 20;
-    std::string keyText = "修改描述";
-    std::string valText = "按  编辑";
-    
-    auto keyDim = r->getTextDimensions(keyText, false, keyFont);
-    auto valDim = r->getTextDimensions(valText, false, valFont);
-    
-    s32 keyY = listY + (ITEM_HEIGHT + keyDim.second) / 2;
-    s32 valY = listY + (ITEM_HEIGHT + valDim.second) / 2;
-    
-    r->drawString(keyText, false, x + 19, keyY, keyFont, r->a(tsl::defaultTextColor));
-    r->drawString(valText, false, x + w - 15 - valDim.first, valY, valFont, r->a(tsl::onTextColor));
 }
 
 bool MacroDetailGui::handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) {
-    // 上下键滚动使用说明（参考 updater_ui.cpp L185-196）
+    // 上下键滚动使用说明
     constexpr s32 scrollStep = 8;
     if (keysHeld & HidNpadButton_AnyUp) {
         m_scrollOffset -= scrollStep;
@@ -331,18 +294,6 @@ bool MacroDetailGui::handleInput(u64 keysDown, u64 keysHeld, const HidTouchState
     if (keysHeld & HidNpadButton_AnyDown) {
         m_scrollOffset += scrollStep;
         if (m_scrollOffset > m_maxScrollOffset) m_scrollOffset = m_maxScrollOffset;
-        return true;
-    }
-    
-    if (keysDown & HidNpadButton_Plus) {
-        u64 tid = MacroUtil::getTitleIdFromPath(m_filePath.c_str());
-        char tidStr[17];
-        snprintf(tidStr, sizeof(tidStr), "%016lX", tid);
-        std::string fileName = ult::getFileName(m_filePath);
-        int langIndex = LanguageManager::getZhcnOrZhtwOrEnIndex();
-        char editUrl[128];
-        snprintf(editUrl, sizeof(editUrl), EDIT_URL, tidStr, fileName.c_str(), langParam[langIndex]);
-        tsl::changeTo<MacroInfoEditGui>(editUrl, m_meta.name, m_meta.author);
         return true;
     }
     

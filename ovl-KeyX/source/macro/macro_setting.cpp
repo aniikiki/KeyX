@@ -7,8 +7,6 @@
 #include "focus.hpp"
 #include "macro_list.hpp"
 #include "macro_sampler.hpp"
-#include "contribute_ui.hpp"
-#include "store_ui.hpp"
 
 
 // 录制消息全局变量
@@ -182,32 +180,6 @@ tsl::elm::Element* SettingMacro::createUI() {
     list->addItem(countdown, 50);
 
 
-    list->addItem(new tsl::elm::CategoryHeader(" 在线获取（已安装游戏）"));
-    list->addItem(new tsl::elm::CustomDrawer([](tsl::gfx::Renderer* renderer, s32 x, s32 y, s32 w, s32 h) {
-        renderer->drawString("  游戏中访问只获取当前游戏的脚本", false, x + 5, y + 20-7, 16, (tsl::highlightColor2));
-    }), 30);
-    auto listItemStore = new tsl::elm::ListItem("脚本商店", ">");
-    listItemStore->setClickListener([this](u64 keys) {
-        if (keys & HidNpadButton_A) {
-            u64 tid = GameMonitor::getCurrentTitleId();
-            
-            tsl::changeTo<StoreGetDataGui>(tid);
-            return true;
-        }
-        return false;
-    });
-    list->addItem(listItemStore);
-
-    auto listItemContribute = new tsl::elm::ListItem("我要投稿", ">");
-    listItemContribute->setClickListener([this](u64 keys) {
-        if (keys & HidNpadButton_A) {
-            tsl::changeTo<ContributeGui>();
-            return true;
-        }
-        return false;
-    });
-    list->addItem(listItemContribute);
-    
     frame->setContent(list);
     return frame;
 }

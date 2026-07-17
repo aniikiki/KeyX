@@ -18,9 +18,6 @@ private:
     // 控制住循环是否结束的true代表停止循环
     bool m_loop_error = true;
 
-    // 通知功能
-    bool m_notifEnabled = false;             // 通知开关
-
     // 当前使用的配置文件路径
     char m_GameConfigPath[64];               // 游戏配置文件路径
     const char* m_ConfigPath;                // 其他配置路径（根据globconfig决定）
@@ -65,12 +62,6 @@ private:
     void OnGameLaunched(u64 tid);
     void OnGameRunning(u64 tid);
     void OnGameExited();
-
-    // 触发弹窗
-    void ShowNotification(const char* message);
-    
-    // 创建通知
-    void CreateNotification(bool Enable);
 
     // 开启连发模块
     bool StartAutoKey();

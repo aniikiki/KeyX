@@ -1,5 +1,4 @@
 #include "game.hpp"
-#include "language.hpp"
 #include "ultra.hpp"
 
 namespace {
@@ -46,61 +45,7 @@ bool GameMonitor::getTitleIdGameName(u64 titleId, char* result) {
     NacpLanguageEntry* entry = nullptr;
     int NameLanguageIndex[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
     
-    int systemLanguageIndex = 0;
-    switch (g_systemLanguage) {
-        case SetLanguage_ENUS:
-            systemLanguageIndex = 0;
-            break;
-        case SetLanguage_ENGB:
-            systemLanguageIndex = 1;
-            break;
-        case SetLanguage_JA:
-            systemLanguageIndex = 2;
-            break;
-        case SetLanguage_FR:
-            systemLanguageIndex = 3;
-            break;
-        case SetLanguage_DE:
-            systemLanguageIndex = 4;
-            break;
-        case SetLanguage_ES419:
-            systemLanguageIndex = 5;
-            break;
-        case SetLanguage_ES:
-            systemLanguageIndex = 6;
-            break;
-        case SetLanguage_IT:
-            systemLanguageIndex = 7;
-            break;
-        case SetLanguage_NL:
-            systemLanguageIndex = 8;
-            break;
-        case SetLanguage_FRCA:
-            systemLanguageIndex = 9;
-            break;
-        case SetLanguage_PT:
-            systemLanguageIndex = 10;
-            break;
-        case SetLanguage_RU:
-            systemLanguageIndex = 11;
-            break;
-        case SetLanguage_KO:
-            systemLanguageIndex = 12;
-            break;
-        case SetLanguage_ZHTW:
-        case SetLanguage_ZHHANT:
-            systemLanguageIndex = 13;
-            break;
-        case SetLanguage_ZHCN:
-        case SetLanguage_ZHHANS:
-            systemLanguageIndex = 14;
-            break;
-        case SetLanguage_PTBR:
-            systemLanguageIndex = 15;
-            break;
-        default:
-            systemLanguageIndex = 0;
-    }
+    constexpr int systemLanguageIndex = 14; // 简体中文
 
     // 优先使用系统语言
     entry = &control_data->nacp.lang[systemLanguageIndex];

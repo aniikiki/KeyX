@@ -3,7 +3,6 @@
 #include "ini_helper.hpp"
 #include "ipc.hpp"
 #include "hiddata.hpp"
-#include "i18n.hpp"
 #include "refresh.hpp"
 
 
@@ -106,8 +105,8 @@ tsl::elm::Element* SettingRemapConfig::createUI() {
             : tsl::style::color::ColorText;        // 默认颜色：未映射
 
         auto item = new tsl::elm::ListItemV2(
-            i18n("按键  ") + sourceIcon + "          \uE14A\uE14A",  // 左边：按键名称
-            i18n("按键  ") + targetIcon,   // 右边：目标按键图标
+            std::string("按键  ") + sourceIcon + "          \uE14A\uE14A",  // 左边：按键名称
+            std::string("按键  ") + targetIcon,   // 右边：目标按键图标
             valueColor                             // 右侧文本颜色
         );
         
@@ -146,7 +145,7 @@ void SettingRemapConfig::refreshList() {
         const char* targetIcon = HidHelper::getButtonIcon(s_ButtonMappings[i].target);
         bool isMapped = (strcmp(s_ButtonMappings[i].source, s_ButtonMappings[i].target) != 0);
         tsl::Color valueColor = isMapped ? tsl::Color{0x00, 0xDD, 0xFF, 0xFF} : tsl::style::color::ColorText;
-        m_listItems[i]->setValue(i18n("按键  ") + targetIcon);
+        m_listItems[i]->setValue(std::string("按键  ") + targetIcon);
         m_listItems[i]->setValueColor(valueColor);
     }
 }
@@ -303,7 +302,7 @@ tsl::elm::Element* SettingRemapEdit::createUI() {
     
     auto frame = new tsl::elm::OverlayFrame(
         "修改映射", 
-        i18n("选择 ") + sourceIcon + i18n(" 的目标按键")
+        std::string("选择 ") + sourceIcon + " 的目标按键"
     );
     
     auto list = new tsl::elm::List();
@@ -322,7 +321,7 @@ tsl::elm::Element* SettingRemapEdit::createUI() {
         
         auto item = new tsl::elm::ListItem(
             isCurrent ? "当前" : "",
-            i18n("按键  ") + targetIcon
+            std::string("按键  ") + targetIcon
         );
         
         item->setClickListener([this, targetName](u64 keys) {
@@ -344,10 +343,9 @@ tsl::elm::Element* SettingRemapEdit::createUI() {
     }
     
     // 跳转到当前选中的项
-    list->jumpToItem(i18n("当前"), "");
+    list->jumpToItem("当前", "");
     
     frame->setContent(list);
     return frame;
 }
-
 

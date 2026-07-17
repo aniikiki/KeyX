@@ -4,8 +4,6 @@
 #include <sys/stat.h>
 #include <minIni.h>
 #include <cstdlib>
-#include "libnotification.h"
-#include "language.hpp"
 
 #define CONFIG_DIR "/config/KeyX"
 #define CONFIG_PATH "/config/KeyX/config.ini"
@@ -167,7 +165,6 @@ void App::OnGameLaunched(u64 tid) {
     LoadGameConfig(tid);
     if (m_CurrentAutoEnable || m_CurrentAutoMacroEnable) StartAutoKey();
     if (m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
-    CreateNotification(true);
 }
 
 // 处理游戏运行事件
@@ -197,7 +194,6 @@ void App::OnGameExited() {
     m_GameInFocus = false;
     if (autokey_loop) StopAutoKey();
     m_CurrentTid = 0;
-    CreateNotification(false);
 }
 
 // 加载游戏配置（读取并缓存配置参数）
@@ -207,7 +203,6 @@ void App::LoadGameConfig(u64 tid) {
 
 // 加载基础配置（确定配置路径）
 void App::LoadBasicConfig(u64 tid) {
-    m_notifEnabled = ini_getbool("NOTIFICATION", "notif", false, CONFIG_PATH);
     snprintf(m_GameConfigPath, sizeof(m_GameConfigPath), "/config/KeyX/GameConfig/%016lX.ini", tid);
     m_CurrentGlobConfig = ini_getbool("AUTOFIRE", "globconfig", 1, m_GameConfigPath);
     if (m_FirstLaunch && m_CurrentGlobConfig) {
@@ -277,24 +272,5 @@ void App::UpdateButtonMappingConfig() {
     if (autokey_loop) {
         autokey_loop->UpdateButtonMappings(m_ConfigPath);
     }
-}
-
-void App::ShowNotification(const char* message) {
-    if (m_notifEnabled) createNotification(message, 2, INFO, RIGHT);
-}
-
-void App::CreateNotification(bool Enable) {
-    if (!m_notifEnabled) return;
-    if (!m_CurrentAutoEnable && !m_CurrentAutoRemapEnable && !m_CurrentAutoMacroEnable) return;
-    std::string message = "";
-    if (m_CurrentAutoEnable && m_CurrentAutoRemapEnable && m_CurrentAutoMacroEnable) message = g_NOTIF_All;
-    else {
-        bool first = true;
-        if (m_CurrentAutoEnable) { message += g_NOTIF_Tubro; first = false; }
-        if (m_CurrentAutoRemapEnable) { if (!first) message += g_NOTIF_And; message += g_NOTIF_Mapping; first = false; }
-        if (m_CurrentAutoMacroEnable) { if (!first) message += g_NOTIF_And; message += g_NOTIF_Macro; }
-    }
-    message += Enable ? g_NOTIF_On : g_NOTIF_Off;
-    createNotification(message.c_str(), 2, INFO, RIGHT);
 }
 

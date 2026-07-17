@@ -9,8 +9,6 @@
 #include <algorithm>
 #include "ipc.hpp"
 #include "macro_edit.hpp"
-#include "i18n.hpp"
-#include "macro_upload.hpp"
 #include "macro_detail.hpp"
 
 
@@ -87,11 +85,11 @@ tsl::elm::Element* MacroViewGui::createUI() {
         s32 totalHeight = lineHeight * static_cast<s32>(std::size(kLabels));
         s32 startY = y + (h - totalHeight) / 2 - 20;
         for (size_t i = 0; i < std::size(kLabels); ++i) {
-            snprintf(line, sizeof(line), "%s%s", i18n(kLabels[i]).c_str(), i18n(values[i]).c_str());
+            snprintf(line, sizeof(line), "%s%s", kLabels[i], values[i]);
             r->drawStringWithColoredSections(
                 line,
                 false,
-                {i18n(kLabels[i])},
+                {kLabels[i]},
                 startX,
                 startY + lineHeight,
                 fontSize,
@@ -142,16 +140,6 @@ tsl::elm::Element* MacroViewGui::createUI() {
         return false;
     });  
     list->addItem(listMacroDes);
-
-    auto listUploadMacro = new tsl::elm::ListItem("我要投稿", ">");
-    listUploadMacro->setClickListener([this](u64 keys) {
-        if (keys & HidNpadButton_A) {
-            tsl::changeTo<MacroUploadGui>(m_macroFilePath, m_gameName);
-            return true;
-        }   
-        return false;
-    });  
-    list->addItem(listUploadMacro);
 
     frame->setContent(list);
     return frame;

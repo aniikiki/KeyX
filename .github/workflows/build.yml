@@ -1,0 +1,55 @@
+name: 编译 KeyX
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:20260219
+
+    steps:
+      - name: 检出源码和子模块
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: 安装打包工具
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3 zip
+
+      - name: 编译
+        run: make -j2
+
+      - name: 检查产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f ovl-KeyX/ovl-KeyX.ovl
+          test -f sys-KeyX/out/4100000002025924/exefs.nsp
+          test -f out/KeyX-CN.zip
+
+          if unzip -Z1 out/KeyX-CN.zip \
+            | grep -Eq '0100000000251020|switch/\.overlays/lang/KeyX|update\.json'; then
+            echo "安装包中发现已移除的通知、语言或更新文件"
+            exit 1
+          fi
+
+      - name: 上传简体中文版本
+        uses: actions/upload-artifact@v4
+        with:
+          name: KeyX-CN-${{ github.sha }}
+          path: out/KeyX-CN.zip
+          if-no-files-found: error
+          retention-days: 14
