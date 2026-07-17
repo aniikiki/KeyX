@@ -2,7 +2,8 @@ name: 编译 KeyX
 
 on:
   push:
-  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:

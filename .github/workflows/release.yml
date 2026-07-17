@@ -1,0 +1,63 @@
+name: 发布 KeyX
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:20260219
+
+    steps:
+      - name: 检出源码和子模块
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: 验证标签和版本
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          version=$(awk '/^[[:space:]]*APP_VERSION[[:space:]]*:=/ { print $3; exit }' ovl-KeyX/Makefile)
+          test -n "$version"
+          test "$GITHUB_REF_NAME" = "v$version"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: 安装打包工具
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3 zip
+
+      - name: 编译
+        run: make -j2
+
+      - name: 检查发布包
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="out/KeyX-$VERSION-CN.zip"
+          test -f "$asset"
+
+          if unzip -Z1 "$asset" \
+            | grep -Eq '0100000000251020|switch/\.overlays/lang/KeyX|update\.json'; then
+            echo "安装包中发现已移除的通知、语言或更新文件"
+            exit 1
+          fi
+
+      - name: 发布到 GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/publish_release.py "out/KeyX-$VERSION-CN.zip"
