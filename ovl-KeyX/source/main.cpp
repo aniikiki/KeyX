@@ -34,6 +34,8 @@ public:
     // 退出系统服务
     virtual void exitServices() override 
     {
+        // 按 B 退出前端会直接走 close()，不会触发 onHide()；退出时必须恢复输入功能
+        g_ipcManager.sendResumeInputCommand();
         nsExit();                   // 退出 ns 服务
         pdmqryExit();               // 退出 pdmqry 服务
         pmdmntExit();               // 退出进程管理服务

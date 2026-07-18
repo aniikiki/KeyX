@@ -22,7 +22,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 # 按键助手 (12 bytes)
 
 APP_TITLE	:=	KeyX        
-APP_VERSION :=	2.1.3
+APP_VERSION :=	2.1.6
 
 TARGET		:=	ovl-KeyX
 BUILD		:=	build
