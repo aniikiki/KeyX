@@ -24,6 +24,7 @@ private:
 
     // 当前游戏是否在焦点中
     bool m_GameInFocus = false;
+    bool m_OverlayOpen = false;
 
     bool m_FirstLaunch = false;
 

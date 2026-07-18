@@ -23,6 +23,10 @@
 // 白名单控制
 #define CMD_RELOAD_WHITELIST  11  // 重载白名单
 
+// 前端显示状态
+#define CMD_PAUSE_INPUT       12  // Tesla 前端打开，暂停输入功能
+#define CMD_RESUME_INPUT      13  // Tesla 前端关闭，恢复输入功能
+
 // 系统控制
 #define CMD_EXIT              999 // 退出系统模块
 
@@ -156,8 +160,10 @@ public:
      * @note 重载白名单配置
      */
     Result sendReloadWhitelistCommand();
+
+    Result sendPauseInputCommand();
+    Result sendResumeInputCommand();
 };
 
 // 全局实例 - 程序退出时自动调用析构函数
 extern IPCManager g_ipcManager;
-

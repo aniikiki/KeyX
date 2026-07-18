@@ -131,6 +131,14 @@ void IPCServer::SetReloadWhitelistCallback(std::function<void()> callback) {
     m_ReloadWhitelistCallback = callback;
 }
 
+void IPCServer::SetPauseInputCallback(std::function<void()> callback) {
+    m_PauseInputCallback = callback;
+}
+
+void IPCServer::SetResumeInputCallback(std::function<void()> callback) {
+    m_ResumeInputCallback = callback;
+}
+
 // 静态线程入口函数
 void IPCServer::ThreadEntry(void* arg) {
     IPCServer* server = static_cast<IPCServer*>(arg);
@@ -218,7 +226,7 @@ void IPCServer::WaitAndProcessRequest() {
         }
         
         bool should_close = false;
-        CommandResult cmd_result = {false, false, false, false, false, false, false, false, false, false, false, false, false};
+        CommandResult cmd_result{};
         Request request = ParseRequestFromTLS();
         
         switch (request.type) {
@@ -302,6 +310,14 @@ void IPCServer::WaitAndProcessRequest() {
         if (cmd_result.should_reload_whitelist) {
             if (m_ReloadWhitelistCallback) m_ReloadWhitelistCallback();
         }
+
+        if (cmd_result.should_pause_input) {
+            if (m_PauseInputCallback) m_PauseInputCallback();
+        }
+
+        if (cmd_result.should_resume_input) {
+            if (m_ResumeInputCallback) m_ResumeInputCallback();
+        }
         
         // 退出服务器回调
         if (cmd_result.should_exit_server) {
@@ -313,7 +329,7 @@ void IPCServer::WaitAndProcessRequest() {
 
 // 处理命令 - 完整处理命令逻辑，但不直接修改服务器状态
 CommandResult IPCServer::HandleCommand(u64 cmd_id) {
-    CommandResult result = {false, false, false, false, false, false, false, false, false, false, false, false, false};
+    CommandResult result{};
     
     switch (cmd_id) {
         case CMD_ENABLE_AUTOFIRE:
@@ -369,6 +385,16 @@ CommandResult IPCServer::HandleCommand(u64 cmd_id) {
         case CMD_RELOAD_WHITELIST:
             WriteResponseToTLS(0);
             result.should_reload_whitelist = true;
+            break;
+
+        case CMD_PAUSE_INPUT:
+            WriteResponseToTLS(0);
+            result.should_pause_input = true;
+            break;
+
+        case CMD_RESUME_INPUT:
+            WriteResponseToTLS(0);
+            result.should_resume_input = true;
             break;
             
         case CMD_EXIT:

@@ -36,6 +36,7 @@ namespace {
 Turbo::Turbo(const char* config_path) {
     m_HoldButtonMask = 0;
     m_ToggleButtonMask = 0;
+    m_StopButtonMask = 0;
     m_PressDurationNs = 100 * 1000000ULL;   // 默认100ms
     m_ReleaseDurationNs = 100 * 1000000ULL; // 默认100ms
     m_IsActive = false;
@@ -44,8 +45,8 @@ Turbo::Turbo(const char* config_path) {
     m_InitialPressTime = 0;
     m_DelayStartDurationNs = 200 * 1000000ULL;
     m_LatchedButtons = 0;
-    m_ToggleArmedButtons = 0;
     m_PreviousToggleButtons = 0;
+    m_StopButtonWasPressed = false;
     m_NeedsInputSync = true;
     m_ConfigPathHash = 0;
     // 自动加载配置
@@ -54,28 +55,33 @@ Turbo::Turbo(const char* config_path) {
 
 // 加载配置
 void Turbo::LoadConfig(const char* config_path) {
-    // 读取互斥的按住/切换连发掩码；旧配置中的 buttons 仍为按住连发
+    // 读取互斥的按住/切换连发/停止键掩码；旧配置中的 buttons 仍为按住连发
     char hold_buttons_str[32];
     char toggle_buttons_str[32];
+    char stop_button_str[32];
     ini_gets("AUTOFIRE", "buttons", "0", hold_buttons_str, sizeof(hold_buttons_str), config_path);
     ini_gets("AUTOFIRE", "togglebuttons", "0", toggle_buttons_str, sizeof(toggle_buttons_str), config_path);
+    ini_gets("AUTOFIRE", "stopbutton", "0", stop_button_str, sizeof(stop_button_str), config_path);
     u64 hold_buttons = strtoull(hold_buttons_str, nullptr, 10);
     u64 toggle_buttons = strtoull(toggle_buttons_str, nullptr, 10);
+    u64 stop_button = strtoull(stop_button_str, nullptr, 10);
     hold_buttons &= ~toggle_buttons;  // 配置异常重叠时，切换模式优先
+    stop_button &= ~(hold_buttons | toggle_buttons);
+    if (stop_button != 0) stop_button &= (~stop_button + 1ULL); // 停止键只允许一个
 
     u64 config_path_hash = HashConfigPath(config_path);
     bool config_changed = m_ConfigPathHash != 0 && m_ConfigPathHash != config_path_hash;
     m_ConfigPathHash = config_path_hash;
     m_HoldButtonMask = hold_buttons;
     m_ToggleButtonMask = toggle_buttons;
+    m_StopButtonMask = stop_button;
     if (config_changed) {
         m_LatchedButtons = 0;
-        m_ToggleArmedButtons = 0;
     } else {
         m_LatchedButtons &= m_ToggleButtonMask;
-        m_ToggleArmedButtons &= m_LatchedButtons;
     }
     m_PreviousToggleButtons = 0;
+    m_StopButtonWasPressed = false;
     m_NeedsInputSync = true;
     // 读取时间参数（毫秒转纳秒）
     int press_ms = ini_getl("AUTOFIRE", "presstime", 100, config_path);
@@ -92,25 +98,27 @@ void Turbo::LoadConfig(const char* config_path) {
 
 }
 
-void Turbo::GetAllowedButtonMasks(bool isJoyCon, u64& holdMask, u64& toggleMask) const {
+void Turbo::GetAllowedButtonMasks(bool isJoyCon, u64& holdMask, u64& toggleMask, u64& stopMask) const {
     holdMask = m_HoldButtonMask;
     toggleMask = m_ToggleButtonMask;
+    stopMask = m_StopButtonMask;
     if (!isJoyCon) return;
 
     u64 sideMask = m_isJCRightHand ? RIGHT_JOYCON_BUTTONS : LEFT_JOYCON_BUTTONS;
     holdMask &= sideMask;
     toggleMask &= sideMask;
+    stopMask &= sideMask;
 }
 
 void Turbo::SynchronizeInput(u64 buttons, bool isJoyCon) {
     u64 holdMask = 0;
     u64 toggleMask = 0;
-    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask);
+    u64 stopMask = 0;
+    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask, stopMask);
     (void)holdMask;
     m_LatchedButtons &= toggleMask;
-    // 宏/暂停期间的输入可能来自注入，重新要求一次真实释放再允许关闭
-    m_ToggleArmedButtons = 0;
     m_PreviousToggleButtons = buttons & toggleMask;
+    m_StopButtonWasPressed = (buttons & stopMask) != 0;
     m_NeedsInputSync = false;
 }
 
@@ -123,37 +131,43 @@ bool Turbo::IsJCRightHand() {
 void Turbo::Process(ProcessResult& result, bool isJoyCon) {
     u64 holdMask = 0;
     u64 toggleMask = 0;
-    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask);
+    u64 stopMask = 0;
+    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask, stopMask);
     m_LatchedButtons &= toggleMask;
-    m_ToggleArmedButtons &= m_LatchedButtons;
 
-    // 未锁定的切换键只响应上升沿。已锁定键产生的注入即使出现在读取结果中，
-    // 也不会再次触发开启或影响其他切换键。
+    // 切换键只负责开启；关闭统一由独立停止键完成。
     u64 physical_toggle_buttons = result.buttons & toggleMask;
+    u64 physical_stop_button = result.buttons & stopMask;
+    bool stop_button_is_pressed = physical_stop_button != 0;
+    bool stop_pressed = false;
     if (m_NeedsInputSync) {
         m_PreviousToggleButtons = physical_toggle_buttons;
+        m_StopButtonWasPressed = stop_button_is_pressed;
         m_NeedsInputSync = false;
     } else {
         u64 newly_pressed = physical_toggle_buttons & ~m_PreviousToggleButtons & ~m_LatchedButtons;
         m_LatchedButtons |= newly_pressed;
-        m_ToggleArmedButtons &= ~newly_pressed;
-
-        // 只在插件未注入连发键、且阶段切换已稳定后判断关闭动作。
-        // 先看到真实松开才置为 armed，之后同一按键再次按下才会关闭。
-        if (CanSampleToggleRelease()) {
-            u64 released_buttons = m_LatchedButtons & ~physical_toggle_buttons;
-            m_ToggleArmedButtons |= released_buttons;
-            u64 stop_buttons = m_LatchedButtons & m_ToggleArmedButtons & physical_toggle_buttons;
-            m_LatchedButtons &= ~stop_buttons;
-            m_ToggleArmedButtons &= ~stop_buttons;
-        }
+        stop_pressed = stop_button_is_pressed && !m_StopButtonWasPressed;
+        if (stop_pressed) m_LatchedButtons = 0;
         m_PreviousToggleButtons = physical_toggle_buttons;
+        m_StopButtonWasPressed = stop_button_is_pressed;
     }
 
     // 按住和切换模式可以同时工作，但每个按键只属于其中一种
     u64 hold_buttons = result.buttons & holdMask;
     u64 active_buttons = hold_buttons | m_LatchedButtons;
-    u64 normal_buttons = result.buttons & ~(holdMask | toggleMask);
+    u64 normal_buttons = result.buttons & ~(holdMask | toggleMask | stopMask);
+
+    // 没有按住连发需要继续时，停止键立即恢复正常输入状态。
+    // 若仍按着按住连发键，则保持当前连发周期，不让停止键打断它。
+    if (stop_pressed && (hold_buttons == 0 || !m_IsActive)) {
+        if (hold_buttons == 0) TurboFinishing();
+        result.event = FeatureEvent::FINISHING;
+        // 防误触等待阶段仍保留原本的按住输入，只屏蔽停止键。
+        result.OtherButtons = normal_buttons | hold_buttons;
+        return;
+    }
+
     result.event = DetermineEvent(active_buttons);
     switch (result.event) {
         case FeatureEvent::IDLE:
@@ -222,8 +236,8 @@ void Turbo::TurboFinishing() {
 void Turbo::ResetState() {
     TurboFinishing();
     m_LatchedButtons = 0;
-    m_ToggleArmedButtons = 0;
     m_PreviousToggleButtons = 0;
+    m_StopButtonWasPressed = false;
     m_NeedsInputSync = true;
 }
 
@@ -238,16 +252,4 @@ bool Turbo::CheckRelease(u64 active_buttons) {
     if (pos_in_cycle < INPUT_SETTLE_NS) return false;
     if (active_buttons == 0) return true;
     return false;
-}
-
-bool Turbo::CanSampleToggleRelease() const {
-    if (!m_IsActive) return false;
-    u64 cycle_ns = m_PressDurationNs + m_ReleaseDurationNs;
-    if (cycle_ns == 0 || m_ReleaseDurationNs == 0) return false;
-
-    u64 elapsed_ns = armTicksToNs(armGetSystemTick() - m_TurboStartTime);
-    u64 pos_in_cycle = elapsed_ns % cycle_ns;
-    u64 release_settle_ns = m_ReleaseDurationNs / 2;
-    if (release_settle_ns > INPUT_SETTLE_NS) release_settle_ns = INPUT_SETTLE_NS;
-    return pos_in_cycle >= m_PressDurationNs + release_settle_ns;
 }

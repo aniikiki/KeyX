@@ -49,7 +49,7 @@ bool App::InitializeIPC() {
     // 设置开启连发回调
     ipc_server->SetEnableAutoFireCallback([this]() {
         m_CurrentAutoEnable = true;
-        if (m_GameInFocus) {
+        if (m_GameInFocus && !m_OverlayOpen) {
             if (autokey_loop) UpdateTurboConfig();
             else StartAutoKey();
         }
@@ -65,7 +65,7 @@ bool App::InitializeIPC() {
     // 设置开启宏回调
     ipc_server->SetEnableMacroCallback([this]() {
         m_CurrentAutoMacroEnable = true;
-        if (m_GameInFocus) {
+        if (m_GameInFocus && !m_OverlayOpen) {
             if (autokey_loop) UpdateMacroConfig();
             else StartAutoKey();
         }
@@ -81,7 +81,7 @@ bool App::InitializeIPC() {
     // 设置开启映射回调
     ipc_server->SetEnableMappingCallback([this]() {
         m_CurrentAutoRemapEnable = true;
-        if (m_GameInFocus) ButtonRemapper::SetMapping(m_ConfigPath);
+        if (m_GameInFocus && !m_OverlayOpen) ButtonRemapper::SetMapping(m_ConfigPath);
         UpdateButtonMappingConfig();
     });
     
@@ -94,7 +94,7 @@ bool App::InitializeIPC() {
     // 设置重载全部配置
     ipc_server->SetReloadBasicCallback([this]() {
         LoadGameConfig(m_CurrentTid);
-        if (m_GameInFocus && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
+        if (m_GameInFocus && !m_OverlayOpen && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
         UpdateTurboConfig();
         UpdateMacroConfig();
         UpdateButtonMappingConfig();
@@ -112,13 +112,30 @@ bool App::InitializeIPC() {
     
     // 设置重载映射配置回调
     ipc_server->SetReloadMappingCallback([this]() {
-        if (m_GameInFocus && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
+        if (m_GameInFocus && !m_OverlayOpen && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
         UpdateButtonMappingConfig();
     });
 
     // 重载白名单
     ipc_server->SetReloadWhitelistCallback([this]() {
         GameMonitor::LoadWhitelist();
+    });
+
+    ipc_server->SetPauseInputCallback([this]() {
+        m_OverlayOpen = true;
+        if (autokey_loop) PauseAutoKey();
+        if (m_CurrentAutoRemapEnable) ButtonRemapper::RestoreMapping();
+    });
+
+    ipc_server->SetResumeInputCallback([this]() {
+        m_OverlayOpen = false;
+        if (!m_GameInFocus) return;
+
+        if (m_CurrentAutoEnable || m_CurrentAutoMacroEnable) {
+            if (autokey_loop) ResumeAutoKey();
+            else StartAutoKey();
+        }
+        if (m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
     });
 
     // 启动服务
@@ -163,8 +180,8 @@ void App::OnGameLaunched(u64 tid) {
     m_GameInFocus = true;
     m_CurrentTid = tid;
     LoadGameConfig(tid);
-    if (m_CurrentAutoEnable || m_CurrentAutoMacroEnable) StartAutoKey();
-    if (m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
+    if (!m_OverlayOpen && (m_CurrentAutoEnable || m_CurrentAutoMacroEnable)) StartAutoKey();
+    if (!m_OverlayOpen && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
 }
 
 // 处理游戏运行事件
@@ -174,10 +191,10 @@ void App::OnGameRunning(u64 tid) {
     switch (focus) {
         case FocusState::InFocus:
             m_GameInFocus = true;
-            if ((m_CurrentAutoEnable || m_CurrentAutoMacroEnable) && autokey_loop) ResumeAutoKey();
-            else if ((m_CurrentAutoEnable || m_CurrentAutoMacroEnable) && !autokey_loop) StartAutoKey();
+            if (!m_OverlayOpen && (m_CurrentAutoEnable || m_CurrentAutoMacroEnable) && autokey_loop) ResumeAutoKey();
+            else if (!m_OverlayOpen && (m_CurrentAutoEnable || m_CurrentAutoMacroEnable) && !autokey_loop) StartAutoKey();
             else if (!m_CurrentAutoEnable && !m_CurrentAutoMacroEnable && autokey_loop) StopAutoKey();
-            if (m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
+            if (!m_OverlayOpen && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
             break;
         case FocusState::OutOfFocus:
             m_GameInFocus = false;
@@ -273,4 +290,3 @@ void App::UpdateButtonMappingConfig() {
         autokey_loop->UpdateButtonMappings(m_ConfigPath);
     }
 }
-

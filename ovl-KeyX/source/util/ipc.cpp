@@ -95,6 +95,14 @@ Result IPCManager::sendReloadWhitelistCommand() {
     return SendCommand(CMD_RELOAD_WHITELIST, false);
 }
 
+Result IPCManager::sendPauseInputCommand() {
+    return SendCommand(CMD_PAUSE_INPUT, false);
+}
+
+Result IPCManager::sendResumeInputCommand() {
+    return SendCommand(CMD_RESUME_INPUT, false);
+}
+
 Result IPCManager::sendExitCommand() {
     return SendCommand(CMD_EXIT, false);
 }

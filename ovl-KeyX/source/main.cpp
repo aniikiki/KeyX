@@ -3,6 +3,7 @@
 #include "main_menu.hpp"
 #include "refresh.hpp"
 #include "game.hpp"
+#include "ipc.hpp"
 // KeyX 特斯拉覆盖层主类
 class KeyXOverlay : public tsl::Overlay {
 
@@ -40,8 +41,13 @@ public:
 
     // 覆盖层显示时调用，用于更新游戏信息
     virtual void onShow() override {
+        g_ipcManager.sendPauseInputCommand();
         if (m_isFirstShow) m_isFirstShow = false;
         else Refresh::RefrRequest(Refresh::OnShow);
+    }
+
+    virtual void onHide() override {
+        g_ipcManager.sendResumeInputCommand();
     }
 
     // 加载初始GUI界面

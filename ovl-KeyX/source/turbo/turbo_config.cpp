@@ -14,14 +14,17 @@ namespace {
 
     u64 s_HoldTurboButtons = 0;
     u64 s_ToggleTurboButtons = 0;
+    u64 s_StopTurboButton = 0;
 
     enum class TurboButtonMode {
         Off,
         Hold,
         Toggle,
+        Stop,
     };
 
     TurboButtonMode GetButtonMode(u64 flag) {
+        if (s_StopTurboButton & flag) return TurboButtonMode::Stop;
         if (s_ToggleTurboButtons & flag) return TurboButtonMode::Toggle;
         if (s_HoldTurboButtons & flag) return TurboButtonMode::Hold;
         return TurboButtonMode::Off;
@@ -31,6 +34,7 @@ namespace {
         switch (mode) {
             case TurboButtonMode::Hold: return "按住";
             case TurboButtonMode::Toggle: return "切换";
+            case TurboButtonMode::Stop: return "停止键";
             default: return "关闭";
         }
     }
@@ -39,6 +43,7 @@ namespace {
         switch (mode) {
             case TurboButtonMode::Hold: return {0x00, 0xDD, 0xFF, 0xFF};
             case TurboButtonMode::Toggle: return {0xFF, 0xD0, 0x00, 0xFF};
+            case TurboButtonMode::Stop: return {0xFF, 0x55, 0x75, 0xFF};
             default: return tsl::style::color::ColorDescription;
         }
     }
@@ -46,6 +51,7 @@ namespace {
     void SaveButtonMasks(const char* configPath) {
         IniHelper::setString("AUTOFIRE", "buttons", std::to_string(s_HoldTurboButtons), configPath);
         IniHelper::setString("AUTOFIRE", "togglebuttons", std::to_string(s_ToggleTurboButtons), configPath);
+        IniHelper::setString("AUTOFIRE", "stopbutton", std::to_string(s_StopTurboButton), configPath);
     }
     
     struct SpeedConfig {
@@ -85,12 +91,16 @@ SettingTurboConfig::SettingTurboConfig(bool isGlobal, u64 currentTitleId)
     m_DelayStartMs = IniHelper::getInt("AUTOFIRE", "delaystartms", 200, m_ConfigPath);
     if (m_DelayStartMs < DELAY_START_MIN_MS) m_DelayStartMs = DELAY_START_MIN_MS;
     if (m_DelayStartMs > DELAY_START_MAX_MS) m_DelayStartMs = DELAY_START_MAX_MS;
-    // 读取互斥的按住/切换连发配置
+    // 读取互斥的按住/切换连发/停止键配置
     std::string holdButtons = IniHelper::getString("AUTOFIRE", "buttons", "0", m_ConfigPath);
     std::string toggleButtons = IniHelper::getString("AUTOFIRE", "togglebuttons", "0", m_ConfigPath);
+    std::string stopButton = IniHelper::getString("AUTOFIRE", "stopbutton", "0", m_ConfigPath);
     s_HoldTurboButtons = std::strtoull(holdButtons.c_str(), nullptr, 10);
     s_ToggleTurboButtons = std::strtoull(toggleButtons.c_str(), nullptr, 10);
+    s_StopTurboButton = std::strtoull(stopButton.c_str(), nullptr, 10);
     s_HoldTurboButtons &= ~s_ToggleTurboButtons;
+    s_StopTurboButton &= ~(s_HoldTurboButtons | s_ToggleTurboButtons);
+    if (s_StopTurboButton != 0) s_StopTurboButton &= (~s_StopTurboButton + 1ULL);
 }
 
 tsl::elm::Element* SettingTurboConfig::createUI() {
@@ -162,7 +172,7 @@ tsl::elm::Element* SettingTurboConfig::createUI() {
 
     // 为新增的延迟滑条留出空间，同时保持按键布局完整可见
     s32 buttonDisplayHeight = 180;
-    // 添加按键布局显示区域：蓝色=按住，黄色=切换
+    // 添加按键布局显示区域：蓝色=按住，黄色=切换，红色=停止键
     auto buttonDisplay = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h) {
         tsl::Color whiteColor = {0xFF, 0xFF, 0xFF, 0xFF};
         auto buttonColor = [&](u64 flag) {
@@ -264,7 +274,7 @@ tsl::elm::Element* SettingTurboButton::createUI() {
         renderer->drawString("\uE0EE  重置", false, 270, 693, 23, renderer->a(tsl::style::color::ColorText));
     }));
     auto list = new tsl::elm::List();
-    list->addItem(new tsl::elm::CategoryHeader("选择模式：关闭 → 按住 → 切换"));
+    list->addItem(new tsl::elm::CategoryHeader("关闭 → 按住 → 切换 → 停止键"));
     m_buttonItems.clear();
     for (const auto& btn : TurboConfig::Buttons) {
         const char* icon = HidHelper::getIconByMask(btn.flag);
@@ -272,33 +282,34 @@ tsl::elm::Element* SettingTurboButton::createUI() {
         TurboButtonMode mode = GetButtonMode(btn.flag);
         auto item = new tsl::elm::ListItem(buttonName, GetModeText(mode));
         item->setValueColor(GetModeColor(mode));
-        item->setClickListener([this, item, btn](u64 keys) {
+        item->setClickListener([this, btn](u64 keys) {
             if (!(keys & HidNpadButton_A)) return false;
 
-            TurboButtonMode nextMode;
             switch (GetButtonMode(btn.flag)) {
                 case TurboButtonMode::Off:
                     s_HoldTurboButtons |= btn.flag;
                     s_ToggleTurboButtons &= ~btn.flag;
-                    nextMode = TurboButtonMode::Hold;
+                    s_StopTurboButton &= ~btn.flag;
                     break;
                 case TurboButtonMode::Hold:
                     s_HoldTurboButtons &= ~btn.flag;
                     s_ToggleTurboButtons |= btn.flag;
-                    nextMode = TurboButtonMode::Toggle;
+                    s_StopTurboButton &= ~btn.flag;
                     break;
-                default:
+                case TurboButtonMode::Toggle:
                     s_HoldTurboButtons &= ~btn.flag;
                     s_ToggleTurboButtons &= ~btn.flag;
-                    nextMode = TurboButtonMode::Off;
+                    s_StopTurboButton = btn.flag; // 新停止键自动替换旧停止键
+                    break;
+                case TurboButtonMode::Stop:
+                    s_StopTurboButton = 0;
                     break;
             }
 
             SaveButtonMasks(m_configPath);
             g_ipcManager.sendReloadAutoFireCommand();
             Refresh::RefrRequest(Refresh::MainMenu);
-            item->setValue(GetModeText(nextMode));
-            item->setValueColor(GetModeColor(nextMode));
+            RefreshButtonItems();
             return true;
         });
         m_buttonItems.push_back(item);
@@ -311,10 +322,15 @@ tsl::elm::Element* SettingTurboButton::createUI() {
 
 void SettingTurboButton::update() {
     if (Refresh::RefrConsume(Refresh::TurboButton)) {
-        for (auto* item : m_buttonItems) {
-            item->setValue(GetModeText(TurboButtonMode::Off));
-            item->setValueColor(GetModeColor(TurboButtonMode::Off));
-        }
+        RefreshButtonItems();
+    }
+}
+
+void SettingTurboButton::RefreshButtonItems() {
+    for (int i = 0; i < TurboConfig::ButtonCount && i < static_cast<int>(m_buttonItems.size()); i++) {
+        TurboButtonMode mode = GetButtonMode(TurboConfig::Buttons[i].flag);
+        m_buttonItems[i]->setValue(GetModeText(mode));
+        m_buttonItems[i]->setValueColor(GetModeColor(mode));
     }
 }
 
@@ -325,6 +341,7 @@ bool SettingTurboButton::handleInput(u64 keysDown, u64 keysHeld, const HidTouchS
     if (keysDown & HidNpadButton_Right) {
         s_HoldTurboButtons = 0;
         s_ToggleTurboButtons = 0;
+        s_StopTurboButton = 0;
         SaveButtonMasks(m_configPath);
         Refresh::RefrRequest(Refresh::TurboButton);
         g_ipcManager.sendReloadAutoFireCommand();

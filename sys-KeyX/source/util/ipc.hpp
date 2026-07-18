@@ -17,6 +17,10 @@
 #define CMD_RELOAD_MAPPING    7   // 重载映射配置
 #define CMD_RELOAD_WHITELIST  11  // 重载白名单
 
+// 前端显示状态
+#define CMD_PAUSE_INPUT       12  // Tesla 前端打开，暂停输入功能
+#define CMD_RESUME_INPUT      13  // Tesla 前端关闭，恢复输入功能
+
 // 宏控制
 #define CMD_ENABLE_MACRO      8   // 开启宏
 #define CMD_DISABLE_MACRO     9   // 关闭宏
@@ -40,6 +44,8 @@ struct CommandResult {
     bool should_disable_macro;      // 是否需要关闭宏（在响应发送后）
     bool should_reload_macro;       // 是否需要重载宏配置（在响应发送后）
     bool should_reload_whitelist;   // 是否需要重载白名单（在响应发送后）
+    bool should_pause_input;        // 是否需要暂停输入功能（在响应发送后）
+    bool should_resume_input;       // 是否需要恢复输入功能（在响应发送后）
 };
 
 // IPC服务器类
@@ -74,6 +80,8 @@ private:
     std::function<void()> m_DisableMacroCallback;     // 关闭宏回调
     std::function<void()> m_ReloadMacroCallback;      // 重载宏配置回调
     std::function<void()> m_ReloadWhitelistCallback;  // 重载白名单回调
+    std::function<void()> m_PauseInputCallback;       // Tesla 前端打开回调
+    std::function<void()> m_ResumeInputCallback;      // Tesla 前端关闭回调
     
     // 内部方法
     void StartServer();
@@ -118,5 +126,7 @@ public:
     void SetDisableMacroCallback(std::function<void()> callback);
     void SetReloadMacroCallback(std::function<void()> callback);
     void SetReloadWhitelistCallback(std::function<void()> callback);
+    void SetPauseInputCallback(std::function<void()> callback);
+    void SetResumeInputCallback(std::function<void()> callback);
     bool ShouldExit() const { return m_ShouldExit; }
 };
