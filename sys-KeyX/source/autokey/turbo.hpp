@@ -38,9 +38,11 @@ private:
     bool m_IsActive;            // 是否运行中
     bool m_IsPressed;           // 当前是按下还是松开周期
     u64 m_TurboStartTime;       // 连发开始时间
-    u64 m_InitialPressTime;     // 首次按下时间（用于200ms延迟）
+    u64 m_InitialPressTime;     // 首次按下时间（用于防误触延迟）
+    u64 m_DelayStartDurationNs; // 防误触延迟时间（纳秒）
     bool m_DelayStart;          // 是否启用延迟启动
     u64 m_LatchedButtons;       // 已锁定的切换连发按键
+    u64 m_ToggleArmedButtons;   // 已确认释放、允许再次按下关闭的切换键
     u64 m_PreviousToggleButtons;// 上一轮切换键的物理状态
     bool m_NeedsInputSync;      // 恢复/重载后先同步输入，避免误触
     u64 m_ConfigPathHash;       // 当前配置标识，用于识别配置切换
@@ -54,6 +56,6 @@ private:
     
     // 辅助函数
     bool CheckRelease(u64 active_buttons);
-    bool CanSampleToggleInput() const;
+    bool CanSampleToggleRelease() const;
     void GetAllowedButtonMasks(bool isJoyCon, u64& holdMask, u64& toggleMask) const;
 };

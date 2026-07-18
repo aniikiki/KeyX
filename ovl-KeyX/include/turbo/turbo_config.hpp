@@ -13,6 +13,7 @@ private:
     char m_ConfigPath[64];  // 配置文件路径
     int m_TurboSpeed;   // 连发速度档位（0=极速, 1=高速, 2=普通）
     bool m_DelayStart;  // 是否延迟启动
+    int m_DelayStartMs; // 防误触延迟时间（毫秒）
 };
 
 // 按键设置界面

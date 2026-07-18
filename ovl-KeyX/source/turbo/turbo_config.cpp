@@ -6,6 +6,12 @@
 #include "refresh.hpp"
 
 namespace {
+    constexpr int DELAY_START_MIN_MS = 50;
+    constexpr int DELAY_START_MAX_MS = 1000;
+    constexpr int DELAY_START_STEP_MS = 10;
+    constexpr int DELAY_START_STEPS =
+        (DELAY_START_MAX_MS - DELAY_START_MIN_MS) / DELAY_START_STEP_MS + 1;
+
     u64 s_HoldTurboButtons = 0;
     u64 s_ToggleTurboButtons = 0;
 
@@ -76,6 +82,9 @@ SettingTurboConfig::SettingTurboConfig(bool isGlobal, u64 currentTitleId)
     else m_TurboSpeed = 2;
     // 读取防止误触配置（0=关闭，1=开启）
     m_DelayStart = IniHelper::getInt("AUTOFIRE", "delaystart", 1, m_ConfigPath);
+    m_DelayStartMs = IniHelper::getInt("AUTOFIRE", "delaystartms", 200, m_ConfigPath);
+    if (m_DelayStartMs < DELAY_START_MIN_MS) m_DelayStartMs = DELAY_START_MIN_MS;
+    if (m_DelayStartMs > DELAY_START_MAX_MS) m_DelayStartMs = DELAY_START_MAX_MS;
     // 读取互斥的按住/切换连发配置
     std::string holdButtons = IniHelper::getString("AUTOFIRE", "buttons", "0", m_ConfigPath);
     std::string toggleButtons = IniHelper::getString("AUTOFIRE", "togglebuttons", "0", m_ConfigPath);
@@ -137,10 +146,22 @@ tsl::elm::Element* SettingTurboConfig::createUI() {
         return false;
     });
     list->addItem(listItemDelayStart);
+
+    auto listItemDelayDuration = new tsl::elm::StepTrackBarV2(
+        "防误触时间", "", DELAY_START_STEPS,
+        DELAY_START_MIN_MS, DELAY_START_MAX_MS, "ms");
+    listItemDelayDuration->setSimpleCallback([this](s16 value, s16) {
+        m_DelayStartMs = value;
+        IniHelper::setInt("AUTOFIRE", "delaystartms", m_DelayStartMs, m_ConfigPath);
+        g_ipcManager.sendReloadAutoFireCommand();
+    });
+    listItemDelayDuration->setProgress(
+        static_cast<u8>((m_DelayStartMs - DELAY_START_MIN_MS) / DELAY_START_STEP_MS));
+    list->addItem(listItemDelayDuration);
     
 
-    // 按键显示区域高度（720 - 标题97 - 底部73 - 分类标题63 - 3个列表项210 = 277）
-    s32 buttonDisplayHeight = 225;
+    // 为新增的延迟滑条留出空间，同时保持按键布局完整可见
+    s32 buttonDisplayHeight = 180;
     // 添加按键布局显示区域：蓝色=按住，黄色=切换
     auto buttonDisplay = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h) {
         tsl::Color whiteColor = {0xFF, 0xFF, 0xFF, 0xFF};

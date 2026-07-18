@@ -5,6 +5,8 @@
 
 namespace {
     constexpr u64 INPUT_SETTLE_NS = 30000000ULL;
+    constexpr int MIN_DELAY_START_MS = 50;
+    constexpr int MAX_DELAY_START_MS = 1000;
 
     u64 HashConfigPath(const char* path) {
         // FNV-1a：只保存8字节配置标识，避免在常驻模块中复制完整路径
@@ -40,7 +42,9 @@ Turbo::Turbo(const char* config_path) {
     m_IsPressed = false;
     m_TurboStartTime = 0;
     m_InitialPressTime = 0;
+    m_DelayStartDurationNs = 200 * 1000000ULL;
     m_LatchedButtons = 0;
+    m_ToggleArmedButtons = 0;
     m_PreviousToggleButtons = 0;
     m_NeedsInputSync = true;
     m_ConfigPathHash = 0;
@@ -64,8 +68,13 @@ void Turbo::LoadConfig(const char* config_path) {
     m_ConfigPathHash = config_path_hash;
     m_HoldButtonMask = hold_buttons;
     m_ToggleButtonMask = toggle_buttons;
-    if (config_changed) m_LatchedButtons = 0;
-    else m_LatchedButtons &= m_ToggleButtonMask;
+    if (config_changed) {
+        m_LatchedButtons = 0;
+        m_ToggleArmedButtons = 0;
+    } else {
+        m_LatchedButtons &= m_ToggleButtonMask;
+        m_ToggleArmedButtons &= m_LatchedButtons;
+    }
     m_PreviousToggleButtons = 0;
     m_NeedsInputSync = true;
     // 读取时间参数（毫秒转纳秒）
@@ -75,6 +84,10 @@ void Turbo::LoadConfig(const char* config_path) {
     m_ReleaseDurationNs = (u64)release_ms * 1000000ULL;
     // 读取防止误触开关
     m_DelayStart = ini_getbool("AUTOFIRE", "delaystart", 1, config_path);
+    int delay_start_ms = ini_getl("AUTOFIRE", "delaystartms", 200, config_path);
+    if (delay_start_ms < MIN_DELAY_START_MS) delay_start_ms = MIN_DELAY_START_MS;
+    if (delay_start_ms > MAX_DELAY_START_MS) delay_start_ms = MAX_DELAY_START_MS;
+    m_DelayStartDurationNs = static_cast<u64>(delay_start_ms) * 1000000ULL;
     m_isJCRightHand = ini_getbool("AUTOFIRE", "IsJCRightHand", 1, "/config/KeyX/config.ini");
 
 }
@@ -95,6 +108,8 @@ void Turbo::SynchronizeInput(u64 buttons, bool isJoyCon) {
     GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask);
     (void)holdMask;
     m_LatchedButtons &= toggleMask;
+    // 宏/暂停期间的输入可能来自注入，重新要求一次真实释放再允许关闭
+    m_ToggleArmedButtons = 0;
     m_PreviousToggleButtons = buttons & toggleMask;
     m_NeedsInputSync = false;
 }
@@ -110,20 +125,29 @@ void Turbo::Process(ProcessResult& result, bool isJoyCon) {
     u64 toggleMask = 0;
     GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask);
     m_LatchedButtons &= toggleMask;
+    m_ToggleArmedButtons &= m_LatchedButtons;
 
-    // 切换模式只响应可信采样窗口中的物理按键上升沿。
-    // 连发运行后，HDLS 注入会短暂污染下一轮读取，不能每帧更新边沿状态。
+    // 未锁定的切换键只响应上升沿。已锁定键产生的注入即使出现在读取结果中，
+    // 也不会再次触发开启或影响其他切换键。
     u64 physical_toggle_buttons = result.buttons & toggleMask;
-    bool can_sample_toggle = m_LatchedButtons == 0 || CanSampleToggleInput();
-    if (can_sample_toggle) {
-        if (m_NeedsInputSync) {
-            m_PreviousToggleButtons = physical_toggle_buttons;
-            m_NeedsInputSync = false;
-        } else {
-            u64 newly_pressed = physical_toggle_buttons & ~m_PreviousToggleButtons;
-            m_LatchedButtons ^= newly_pressed;
-            m_PreviousToggleButtons = physical_toggle_buttons;
+    if (m_NeedsInputSync) {
+        m_PreviousToggleButtons = physical_toggle_buttons;
+        m_NeedsInputSync = false;
+    } else {
+        u64 newly_pressed = physical_toggle_buttons & ~m_PreviousToggleButtons & ~m_LatchedButtons;
+        m_LatchedButtons |= newly_pressed;
+        m_ToggleArmedButtons &= ~newly_pressed;
+
+        // 只在插件未注入连发键、且阶段切换已稳定后判断关闭动作。
+        // 先看到真实松开才置为 armed，之后同一按键再次按下才会关闭。
+        if (CanSampleToggleRelease()) {
+            u64 released_buttons = m_LatchedButtons & ~physical_toggle_buttons;
+            m_ToggleArmedButtons |= released_buttons;
+            u64 stop_buttons = m_LatchedButtons & m_ToggleArmedButtons & physical_toggle_buttons;
+            m_LatchedButtons &= ~stop_buttons;
+            m_ToggleArmedButtons &= ~stop_buttons;
         }
+        m_PreviousToggleButtons = physical_toggle_buttons;
     }
 
     // 按住和切换模式可以同时工作，但每个按键只属于其中一种
@@ -158,11 +182,11 @@ FeatureEvent Turbo::DetermineEvent(u64 active_buttons) {
     if (turbo_active && CheckRelease(active_buttons)) return FeatureEvent::FINISHING;
     else if (turbo_active) return FeatureEvent::Turbo_EXECUTING;
     else if (has_autokey) {
-        // 切换连发应立即启动；200ms 防误触仅作用于按住连发
+        // 切换连发应立即启动；防误触延迟仅作用于按住连发
         if (m_LatchedButtons != 0) return FeatureEvent::STARTING;
         if (m_InitialPressTime == 0) m_InitialPressTime = armGetSystemTick();
         u64 elapsed_ns = armTicksToNs(armGetSystemTick() - m_InitialPressTime);
-        if (m_DelayStart && elapsed_ns < 200000000ULL) return FeatureEvent::IDLE;
+        if (m_DelayStart && elapsed_ns < m_DelayStartDurationNs) return FeatureEvent::IDLE;
         m_InitialPressTime = 0;
         return FeatureEvent::STARTING;
     }
@@ -198,6 +222,7 @@ void Turbo::TurboFinishing() {
 void Turbo::ResetState() {
     TurboFinishing();
     m_LatchedButtons = 0;
+    m_ToggleArmedButtons = 0;
     m_PreviousToggleButtons = 0;
     m_NeedsInputSync = true;
 }
@@ -215,12 +240,14 @@ bool Turbo::CheckRelease(u64 active_buttons) {
     return false;
 }
 
-bool Turbo::CanSampleToggleInput() const {
-    if (!m_IsActive) return true;
+bool Turbo::CanSampleToggleRelease() const {
+    if (!m_IsActive) return false;
     u64 cycle_ns = m_PressDurationNs + m_ReleaseDurationNs;
-    if (cycle_ns == 0 || m_PressDurationNs == 0) return false;
+    if (cycle_ns == 0 || m_ReleaseDurationNs == 0) return false;
 
     u64 elapsed_ns = armTicksToNs(armGetSystemTick() - m_TurboStartTime);
     u64 pos_in_cycle = elapsed_ns % cycle_ns;
-    return pos_in_cycle >= INPUT_SETTLE_NS && pos_in_cycle < m_PressDurationNs;
+    u64 release_settle_ns = m_ReleaseDurationNs / 2;
+    if (release_settle_ns > INPUT_SETTLE_NS) release_settle_ns = INPUT_SETTLE_NS;
+    return pos_in_cycle >= m_PressDurationNs + release_settle_ns;
 }
