@@ -151,7 +151,8 @@ void AutoKeyLoop::MainLoop() {
                     InjectAll(result);
                     m_PauseStateRestored = true;
                 }
-                for (int i = 0; i < 10 && !m_ShouldExit; ++i) svcSleepThread(100000000ULL);  // 100ms
+                // 每100ms重新检查一次，避免恢复焦点后仍固定等待近1秒
+                svcSleepThread(100000000ULL);
                 continue;
             case FeatureEvent::IDLE:
                 break;
@@ -186,14 +187,17 @@ void AutoKeyLoop::DetermineEvent(ProcessResult& result) {
         6. 如果连发模块没有启用，则返回IDLE
     */ 
     if (m_IsPaused || m_ControllerType == ControllerType::C_NONE) {
-        if (m_ControllerType == ControllerType::C_NONE && m_Turbo) m_Turbo->ResetState();
+        if (m_Turbo) {
+            if (m_ControllerType == ControllerType::C_NONE) m_Turbo->ResetState();
+            else m_Turbo->SynchronizeInput(result.buttons, m_isJoyCon);
+        }
         result.event = FeatureEvent::PAUSED;
         return;
     }
     if (m_Macro) {
         m_Macro->Process(result);
         if (result.event == FeatureEvent::STARTING && m_Turbo) m_Turbo->TurboFinishing();
-        if (result.event != FeatureEvent::IDLE || m_Macro->IsHandlingInput()) {
+        if (result.event != FeatureEvent::IDLE) {
             if (m_Turbo) m_Turbo->SynchronizeInput(result.buttons, m_isJoyCon);
             return;
         }

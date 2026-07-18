@@ -12,10 +12,6 @@ Macro::Macro(const char* macroCfgPath) {
     LoadConfig(macroCfgPath);
 }
 
-bool Macro::IsHandlingInput() const {
-    return m_HotkeyPressed || m_IsPlaying || m_JustStopped;
-}
-
 // 加载配置
 void Macro::LoadConfig(const char* macroCfgPath) {
     m_Macros.clear();

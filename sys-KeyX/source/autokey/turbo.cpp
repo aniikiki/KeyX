@@ -4,6 +4,8 @@
 
 
 namespace {
+    constexpr u64 INPUT_SETTLE_NS = 30000000ULL;
+
     u64 HashConfigPath(const char* path) {
         // FNV-1a：只保存8字节配置标识，避免在常驻模块中复制完整路径
         u64 hash = 14695981039346656037ULL;
@@ -109,15 +111,19 @@ void Turbo::Process(ProcessResult& result, bool isJoyCon) {
     GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask);
     m_LatchedButtons &= toggleMask;
 
-    // 切换模式只响应物理按键的上升沿；重载/恢复后的首帧仅同步
+    // 切换模式只响应可信采样窗口中的物理按键上升沿。
+    // 连发运行后，HDLS 注入会短暂污染下一轮读取，不能每帧更新边沿状态。
     u64 physical_toggle_buttons = result.buttons & toggleMask;
-    if (m_NeedsInputSync) {
-        m_PreviousToggleButtons = physical_toggle_buttons;
-        m_NeedsInputSync = false;
-    } else {
-        u64 newly_pressed = physical_toggle_buttons & ~m_PreviousToggleButtons;
-        m_LatchedButtons ^= newly_pressed;
-        m_PreviousToggleButtons = physical_toggle_buttons;
+    bool can_sample_toggle = m_LatchedButtons == 0 || CanSampleToggleInput();
+    if (can_sample_toggle) {
+        if (m_NeedsInputSync) {
+            m_PreviousToggleButtons = physical_toggle_buttons;
+            m_NeedsInputSync = false;
+        } else {
+            u64 newly_pressed = physical_toggle_buttons & ~m_PreviousToggleButtons;
+            m_LatchedButtons ^= newly_pressed;
+            m_PreviousToggleButtons = physical_toggle_buttons;
+        }
     }
 
     // 按住和切换模式可以同时工作，但每个按键只属于其中一种
@@ -204,7 +210,17 @@ bool Turbo::CheckRelease(u64 active_buttons) {
     u64 cycle_ns = m_PressDurationNs + m_ReleaseDurationNs;
     u64 pos_in_cycle = elapsed_ns % cycle_ns;
     // 按下周期开始后30ms内不检测松开
-    if (pos_in_cycle < 30000000ULL) return false;
+    if (pos_in_cycle < INPUT_SETTLE_NS) return false;
     if (active_buttons == 0) return true;
     return false;
+}
+
+bool Turbo::CanSampleToggleInput() const {
+    if (!m_IsActive) return true;
+    u64 cycle_ns = m_PressDurationNs + m_ReleaseDurationNs;
+    if (cycle_ns == 0 || m_PressDurationNs == 0) return false;
+
+    u64 elapsed_ns = armTicksToNs(armGetSystemTick() - m_TurboStartTime);
+    u64 pos_in_cycle = elapsed_ns % cycle_ns;
+    return pos_in_cycle >= INPUT_SETTLE_NS && pos_in_cycle < m_PressDurationNs;
 }

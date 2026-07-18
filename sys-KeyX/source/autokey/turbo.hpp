@@ -54,5 +54,6 @@ private:
     
     // 辅助函数
     bool CheckRelease(u64 active_buttons);
+    bool CanSampleToggleInput() const;
     void GetAllowedButtonMasks(bool isJoyCon, u64& holdMask, u64& toggleMask) const;
 };
