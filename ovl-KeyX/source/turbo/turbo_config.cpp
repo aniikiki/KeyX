@@ -6,7 +6,41 @@
 #include "refresh.hpp"
 
 namespace {
-    u64 s_TurboButtons = 0;
+    u64 s_HoldTurboButtons = 0;
+    u64 s_ToggleTurboButtons = 0;
+
+    enum class TurboButtonMode {
+        Off,
+        Hold,
+        Toggle,
+    };
+
+    TurboButtonMode GetButtonMode(u64 flag) {
+        if (s_ToggleTurboButtons & flag) return TurboButtonMode::Toggle;
+        if (s_HoldTurboButtons & flag) return TurboButtonMode::Hold;
+        return TurboButtonMode::Off;
+    }
+
+    const char* GetModeText(TurboButtonMode mode) {
+        switch (mode) {
+            case TurboButtonMode::Hold: return "按住";
+            case TurboButtonMode::Toggle: return "切换";
+            default: return "关闭";
+        }
+    }
+
+    tsl::Color GetModeColor(TurboButtonMode mode) {
+        switch (mode) {
+            case TurboButtonMode::Hold: return {0x00, 0xDD, 0xFF, 0xFF};
+            case TurboButtonMode::Toggle: return {0xFF, 0xD0, 0x00, 0xFF};
+            default: return tsl::style::color::ColorDescription;
+        }
+    }
+
+    void SaveButtonMasks(const char* configPath) {
+        IniHelper::setString("AUTOFIRE", "buttons", std::to_string(s_HoldTurboButtons), configPath);
+        IniHelper::setString("AUTOFIRE", "togglebuttons", std::to_string(s_ToggleTurboButtons), configPath);
+    }
     
     struct SpeedConfig {
         const char* name;
@@ -42,8 +76,12 @@ SettingTurboConfig::SettingTurboConfig(bool isGlobal, u64 currentTitleId)
     else m_TurboSpeed = 2;
     // 读取防止误触配置（0=关闭，1=开启）
     m_DelayStart = IniHelper::getInt("AUTOFIRE", "delaystart", 1, m_ConfigPath);
-    // 读取连发按键配置（默认值：0 = 未设置连发）
-    s_TurboButtons = static_cast<u64>(IniHelper::getInt("AUTOFIRE", "buttons", 0, m_ConfigPath));
+    // 读取互斥的按住/切换连发配置
+    std::string holdButtons = IniHelper::getString("AUTOFIRE", "buttons", "0", m_ConfigPath);
+    std::string toggleButtons = IniHelper::getString("AUTOFIRE", "togglebuttons", "0", m_ConfigPath);
+    s_HoldTurboButtons = std::strtoull(holdButtons.c_str(), nullptr, 10);
+    s_ToggleTurboButtons = std::strtoull(toggleButtons.c_str(), nullptr, 10);
+    s_HoldTurboButtons &= ~s_ToggleTurboButtons;
 }
 
 tsl::elm::Element* SettingTurboConfig::createUI() {
@@ -103,10 +141,13 @@ tsl::elm::Element* SettingTurboConfig::createUI() {
 
     // 按键显示区域高度（720 - 标题97 - 底部73 - 分类标题63 - 3个列表项210 = 277）
     s32 buttonDisplayHeight = 225;
-    // 添加按键布局显示区域（根据 s_TurboButtons 动态显示颜色）
+    // 添加按键布局显示区域：蓝色=按住，黄色=切换
     auto buttonDisplay = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h) {
         tsl::Color whiteColor = {0xFF, 0xFF, 0xFF, 0xFF};
-        tsl::Color lightBlueColor = {0x00, 0xDD, 0xFF, 0xFF};  // 亮天蓝色
+        auto buttonColor = [&](u64 flag) {
+            TurboButtonMode mode = GetButtonMode(flag);
+            return mode == TurboButtonMode::Off ? whiteColor : GetModeColor(mode);
+        };
         
         const s32 buttonSize = 30 * 0.8;   // 按钮大小
         const s32 rowSpacing = 10;   // 行间距
@@ -135,45 +176,45 @@ tsl::elm::Element* SettingTurboConfig::createUI() {
         // 垂直居中（drawString的y参数是文字底部，需加buttonSize偏移）
         s32 baseY = y + (h - layoutTotalHeight) / 2 + buttonSize;
         
-        // === 根据 s_TurboButtons 显示按键颜色 ===
+        // === 根据每个按键的连发模式显示颜色 ===
         // 行1: ZL, ZR
         s32 row1Y = baseY;
         r->drawString(ButtonIcon::ZL, false, lColumnX, row1Y, buttonSize, 
-            a((s_TurboButtons & BTN_ZL) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_ZL)));
         r->drawString(ButtonIcon::ZR, false, rColumnX, row1Y, buttonSize, 
-            a((s_TurboButtons & BTN_ZR) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_ZR)));
         
         // 行2: L, R
         s32 row2Y = baseY + buttonSize + rowSpacing;
         r->drawString(ButtonIcon::L, false, lColumnX, row2Y + 10, buttonSize, 
-            a((s_TurboButtons & BTN_L) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_L)));
         r->drawString(ButtonIcon::R, false, rColumnX, row2Y + 10, buttonSize, 
-            a((s_TurboButtons & BTN_R) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_R)));
         
         // 行3: 方向键上, X
         s32 row3Y = baseY + 2 * (buttonSize + rowSpacing);
         r->drawString(ButtonIcon::Up, false, dpadCenterX, row3Y, buttonSize, 
-            a((s_TurboButtons & BTN_UP) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_UP)));
         r->drawString(ButtonIcon::X, false, rightColumnX, row3Y, buttonSize, 
-            a((s_TurboButtons & BTN_X) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_X)));
         
         // 行4: 方向键左右, Y/A
         s32 row4Y = baseY + 3 * (buttonSize + rowSpacing);
         r->drawString(ButtonIcon::Left, false, dpadLeftX, row4Y, buttonSize, 
-            a((s_TurboButtons & BTN_LEFT) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_LEFT)));
         r->drawString(ButtonIcon::Right, false, dpadRightX, row4Y, buttonSize, 
-            a((s_TurboButtons & BTN_RIGHT) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_RIGHT)));
         r->drawString(ButtonIcon::Y, false, yButtonX, row4Y, buttonSize, 
-            a((s_TurboButtons & BTN_Y) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_Y)));
         r->drawString(ButtonIcon::A, false, aButtonX, row4Y, buttonSize, 
-            a((s_TurboButtons & BTN_A) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_A)));
         
         // 行5: 方向键下, B
         s32 row5Y = baseY + 4 * (buttonSize + rowSpacing);
         r->drawString(ButtonIcon::Down, false, dpadCenterX, row5Y, buttonSize, 
-            a((s_TurboButtons & BTN_DOWN) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_DOWN)));
         r->drawString(ButtonIcon::B, false, rightColumnX, row5Y, buttonSize, 
-            a((s_TurboButtons & BTN_B) ? lightBlueColor : whiteColor));
+            a(buttonColor(BTN_B)));
     });
     
     list->addItem(buttonDisplay, buttonDisplayHeight);
@@ -184,9 +225,9 @@ tsl::elm::Element* SettingTurboConfig::createUI() {
 
 
 SettingTurboButton::SettingTurboButton(const char* configPath, bool isGlobal)
-    : m_configPath(configPath)
-    , m_isGlobal(isGlobal)
+    : m_isGlobal(isGlobal)
 {
+    snprintf(m_configPath, sizeof(m_configPath), "%s", configPath);
 }
 
 tsl::elm::Element* SettingTurboButton::createUI() {
@@ -202,21 +243,44 @@ tsl::elm::Element* SettingTurboButton::createUI() {
         renderer->drawString("\uE0EE  重置", false, 270, 693, 23, renderer->a(tsl::style::color::ColorText));
     }));
     auto list = new tsl::elm::List();
-    list->addItem(new tsl::elm::CategoryHeader("选择连发按键（可多选）"));
-    m_toggleItems.clear();
+    list->addItem(new tsl::elm::CategoryHeader("选择模式：关闭 → 按住 → 切换"));
+    m_buttonItems.clear();
     for (const auto& btn : TurboConfig::Buttons) {
-        bool isSelected = (s_TurboButtons & btn.flag) != 0;
         const char* icon = HidHelper::getIconByMask(btn.flag);
         std::string buttonName = std::string(btn.name) + "  " + icon;
-        auto item = new tsl::elm::ToggleListItem(buttonName, isSelected);
-        item->setStateChangedListener([this, btn](bool state) {
-            Refresh::RefrRequest(Refresh::MainMenu);
-            if (state) s_TurboButtons |= btn.flag;
-            else s_TurboButtons &= ~btn.flag;
-            IniHelper::setInt("AUTOFIRE", "buttons", s_TurboButtons, m_configPath);
+        TurboButtonMode mode = GetButtonMode(btn.flag);
+        auto item = new tsl::elm::ListItem(buttonName, GetModeText(mode));
+        item->setValueColor(GetModeColor(mode));
+        item->setClickListener([this, item, btn](u64 keys) {
+            if (!(keys & HidNpadButton_A)) return false;
+
+            TurboButtonMode nextMode;
+            switch (GetButtonMode(btn.flag)) {
+                case TurboButtonMode::Off:
+                    s_HoldTurboButtons |= btn.flag;
+                    s_ToggleTurboButtons &= ~btn.flag;
+                    nextMode = TurboButtonMode::Hold;
+                    break;
+                case TurboButtonMode::Hold:
+                    s_HoldTurboButtons &= ~btn.flag;
+                    s_ToggleTurboButtons |= btn.flag;
+                    nextMode = TurboButtonMode::Toggle;
+                    break;
+                default:
+                    s_HoldTurboButtons &= ~btn.flag;
+                    s_ToggleTurboButtons &= ~btn.flag;
+                    nextMode = TurboButtonMode::Off;
+                    break;
+            }
+
+            SaveButtonMasks(m_configPath);
             g_ipcManager.sendReloadAutoFireCommand();
+            Refresh::RefrRequest(Refresh::MainMenu);
+            item->setValue(GetModeText(nextMode));
+            item->setValueColor(GetModeColor(nextMode));
+            return true;
         });
-        m_toggleItems.push_back(item);
+        m_buttonItems.push_back(item);
         list->addItem(item);
     }
     
@@ -226,7 +290,10 @@ tsl::elm::Element* SettingTurboButton::createUI() {
 
 void SettingTurboButton::update() {
     if (Refresh::RefrConsume(Refresh::TurboButton)) {
-        for (auto* item : m_toggleItems) item->setState(false);
+        for (auto* item : m_buttonItems) {
+            item->setValue(GetModeText(TurboButtonMode::Off));
+            item->setValueColor(GetModeColor(TurboButtonMode::Off));
+        }
     }
 }
 
@@ -235,8 +302,9 @@ bool SettingTurboButton::handleInput(u64 keysDown, u64 keysHeld, const HidTouchS
     
     // 监控右键，执行重置功能
     if (keysDown & HidNpadButton_Right) {
-        s_TurboButtons = 0;
-        IniHelper::setInt("AUTOFIRE", "buttons", s_TurboButtons, m_configPath);
+        s_HoldTurboButtons = 0;
+        s_ToggleTurboButtons = 0;
+        SaveButtonMasks(m_configPath);
         Refresh::RefrRequest(Refresh::TurboButton);
         g_ipcManager.sendReloadAutoFireCommand();
         return true;

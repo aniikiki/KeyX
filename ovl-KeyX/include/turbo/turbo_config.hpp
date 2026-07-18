@@ -26,8 +26,7 @@ public:
     virtual void update() override;
     
 private:
-    const char* m_configPath;   // 配置文件路径（只读，不需要复制）
+    char m_configPath[64];      // 配置文件路径
     bool m_isGlobal;            // true=全局配置, false=独立配置
-    std::vector<tsl::elm::ToggleListItem*> m_toggleItems;
+    std::vector<tsl::elm::ListItem*> m_buttonItems;
 };
-

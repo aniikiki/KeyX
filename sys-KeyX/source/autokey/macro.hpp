@@ -17,6 +17,9 @@ public:
     // 宏结束清理工作
     void MacroFinishing();                    
 
+    // 是否正在识别快捷键、播放或等待停止冷静期
+    bool IsHandlingInput() const;
+
 private:
 
     struct MacroEntry {

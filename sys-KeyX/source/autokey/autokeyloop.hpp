@@ -58,6 +58,7 @@ private:
     bool m_ThreadRunning;
     bool m_ShouldExit;
     bool m_IsPaused;
+    bool m_PauseStateRestored;             // 暂停后是否已恢复物理输入
     
     alignas(0x1000) static char thread_stack[4 * 1024];
     
@@ -102,5 +103,4 @@ private:
     void ApplyForwardMapping(u64& buttons) const;
     u64 ButtonNameToMask(const char* name) const;
 };
-
 

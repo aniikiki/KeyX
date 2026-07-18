@@ -12,6 +12,10 @@ Macro::Macro(const char* macroCfgPath) {
     LoadConfig(macroCfgPath);
 }
 
+bool Macro::IsHandlingInput() const {
+    return m_HotkeyPressed || m_IsPlaying || m_JustStopped;
+}
+
 // 加载配置
 void Macro::LoadConfig(const char* macroCfgPath) {
     m_Macros.clear();
@@ -86,6 +90,12 @@ FeatureEvent Macro::HandlePlayingState(u64 buttons) {
 
 // 从FINISHING状态进入IDLE状态
 FeatureEvent Macro::HandleStopCooldown(u64 buttons) {
+    if (m_CurrentMacroIndex < 0 || static_cast<size_t>(m_CurrentMacroIndex) >= m_Macros.size()) {
+        m_JustStopped = false;
+        m_HotkeyPressed = false;
+        m_CurrentMacroIndex = -1;
+        return FeatureEvent::IDLE;
+    }
     // 因为注入会污染数据，导致按键状态异常，所以等待一段时间
     u64 elapsedSinceStop = armTicksToNs(armGetSystemTick() - m_LastFinishTime);
     if (elapsedSinceStop < STOP_COOLDOWN_NS) return FeatureEvent::IDLE;
@@ -301,4 +311,3 @@ void Macro::FilterStick(HidAnalogStickState& stick, HidAnalogStickState& last, u
     last = stick;
     startTick = armGetSystemTick();
 }
-

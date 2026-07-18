@@ -82,6 +82,7 @@ AutoKeyLoop::AutoKeyLoop(const char* config_path, const char* macroCfgPath, bool
     // 初始化状态
     m_ShouldExit = false;
     m_IsPaused = false;
+    m_PauseStateRestored = false;
     
     // 初始化逆映射表
     m_MappingCount = 0;
@@ -141,8 +142,15 @@ void AutoKeyLoop::MainLoop() {
         ProcessResult result{};
         ReadPhysicalInput(result);
         DetermineEvent(result);
+        if (result.event != FeatureEvent::PAUSED) m_PauseStateRestored = false;
         switch (result.event) {
             case FeatureEvent::PAUSED:
+                if (!m_PauseStateRestored) {
+                    // 清除最后一次注入状态并恢复当前物理输入，避免切换连发残留
+                    result.OtherButtons = result.buttons;
+                    InjectAll(result);
+                    m_PauseStateRestored = true;
+                }
                 for (int i = 0; i < 10 && !m_ShouldExit; ++i) svcSleepThread(100000000ULL);  // 100ms
                 continue;
             case FeatureEvent::IDLE:
@@ -178,13 +186,17 @@ void AutoKeyLoop::DetermineEvent(ProcessResult& result) {
         6. 如果连发模块没有启用，则返回IDLE
     */ 
     if (m_IsPaused || m_ControllerType == ControllerType::C_NONE) {
+        if (m_ControllerType == ControllerType::C_NONE && m_Turbo) m_Turbo->ResetState();
         result.event = FeatureEvent::PAUSED;
         return;
     }
     if (m_Macro) {
         m_Macro->Process(result);
         if (result.event == FeatureEvent::STARTING && m_Turbo) m_Turbo->TurboFinishing();
-        if (result.event != FeatureEvent::IDLE) return;
+        if (result.event != FeatureEvent::IDLE || m_Macro->IsHandlingInput()) {
+            if (m_Turbo) m_Turbo->SynchronizeInput(result.buttons, m_isJoyCon);
+            return;
+        }
     }
     if (m_Turbo) {
         m_Turbo->Process(result, m_isJoyCon);
@@ -196,8 +208,9 @@ void AutoKeyLoop::DetermineEvent(ProcessResult& result) {
 
 // 暂停
 void AutoKeyLoop::Pause() {
-    if (m_Turbo) m_Turbo->TurboFinishing();
+    if (m_Turbo) m_Turbo->ResetState();
     if (m_Macro) m_Macro->MacroFinishing();
+    m_PauseStateRestored = false;
     m_IsPaused = true;
 }
 
@@ -458,5 +471,3 @@ void AutoKeyLoop::InjectAll(ProcessResult& result) {
     }
     hiddbgApplyHdlsStateList(m_HdlsSessionId, &m_StateList); 
 }
-
-

@@ -4,6 +4,16 @@
 
 
 namespace {
+    u64 HashConfigPath(const char* path) {
+        // FNV-1a：只保存8字节配置标识，避免在常驻模块中复制完整路径
+        u64 hash = 14695981039346656037ULL;
+        while (*path != '\0') {
+            hash ^= static_cast<u8>(*path++);
+            hash *= 1099511628211ULL;
+        }
+        return hash;
+    }
+
     // 左 JoyCon 按键掩码（十字键、左肩键、左摇杆、SELECT）
     constexpr u64 LEFT_JOYCON_BUTTONS = 
         HidNpadButton_Left | HidNpadButton_Right | HidNpadButton_Up | HidNpadButton_Down |
@@ -20,23 +30,42 @@ namespace {
 
 // 构造函数
 Turbo::Turbo(const char* config_path) {
-    m_ButtonMask = 0;
+    m_HoldButtonMask = 0;
+    m_ToggleButtonMask = 0;
     m_PressDurationNs = 100 * 1000000ULL;   // 默认100ms
     m_ReleaseDurationNs = 100 * 1000000ULL; // 默认100ms
     m_IsActive = false;
     m_IsPressed = false;
     m_TurboStartTime = 0;
     m_InitialPressTime = 0;
+    m_LatchedButtons = 0;
+    m_PreviousToggleButtons = 0;
+    m_NeedsInputSync = true;
+    m_ConfigPathHash = 0;
     // 自动加载配置
     LoadConfig(config_path);
 }
 
 // 加载配置
 void Turbo::LoadConfig(const char* config_path) {
-    // 读取按键掩码（连发白名单）
-    char buttons_str[32];
-    ini_gets("AUTOFIRE", "buttons", "0", buttons_str, sizeof(buttons_str), config_path);
-    m_ButtonMask = strtoull(buttons_str, nullptr, 10);
+    // 读取互斥的按住/切换连发掩码；旧配置中的 buttons 仍为按住连发
+    char hold_buttons_str[32];
+    char toggle_buttons_str[32];
+    ini_gets("AUTOFIRE", "buttons", "0", hold_buttons_str, sizeof(hold_buttons_str), config_path);
+    ini_gets("AUTOFIRE", "togglebuttons", "0", toggle_buttons_str, sizeof(toggle_buttons_str), config_path);
+    u64 hold_buttons = strtoull(hold_buttons_str, nullptr, 10);
+    u64 toggle_buttons = strtoull(toggle_buttons_str, nullptr, 10);
+    hold_buttons &= ~toggle_buttons;  // 配置异常重叠时，切换模式优先
+
+    u64 config_path_hash = HashConfigPath(config_path);
+    bool config_changed = m_ConfigPathHash != 0 && m_ConfigPathHash != config_path_hash;
+    m_ConfigPathHash = config_path_hash;
+    m_HoldButtonMask = hold_buttons;
+    m_ToggleButtonMask = toggle_buttons;
+    if (config_changed) m_LatchedButtons = 0;
+    else m_LatchedButtons &= m_ToggleButtonMask;
+    m_PreviousToggleButtons = 0;
+    m_NeedsInputSync = true;
     // 读取时间参数（毫秒转纳秒）
     int press_ms = ini_getl("AUTOFIRE", "presstime", 100, config_path);
     int release_ms = ini_getl("AUTOFIRE", "fireinterval", 100, config_path);
@@ -48,6 +77,26 @@ void Turbo::LoadConfig(const char* config_path) {
 
 }
 
+void Turbo::GetAllowedButtonMasks(bool isJoyCon, u64& holdMask, u64& toggleMask) const {
+    holdMask = m_HoldButtonMask;
+    toggleMask = m_ToggleButtonMask;
+    if (!isJoyCon) return;
+
+    u64 sideMask = m_isJCRightHand ? RIGHT_JOYCON_BUTTONS : LEFT_JOYCON_BUTTONS;
+    holdMask &= sideMask;
+    toggleMask &= sideMask;
+}
+
+void Turbo::SynchronizeInput(u64 buttons, bool isJoyCon) {
+    u64 holdMask = 0;
+    u64 toggleMask = 0;
+    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask);
+    (void)holdMask;
+    m_LatchedButtons &= toggleMask;
+    m_PreviousToggleButtons = buttons & toggleMask;
+    m_NeedsInputSync = false;
+}
+
 // 获取只允许左边还是右边的手柄联发
 bool Turbo::IsJCRightHand() {
     return m_isJCRightHand;
@@ -55,13 +104,27 @@ bool Turbo::IsJCRightHand() {
 
 // 核心函数：处理输入
 void Turbo::Process(ProcessResult& result, bool isJoyCon) {
-    u64 jcWhitelistMask = m_ButtonMask;
-    if (isJoyCon) jcWhitelistMask &= m_isJCRightHand ? RIGHT_JOYCON_BUTTONS : LEFT_JOYCON_BUTTONS;
+    u64 holdMask = 0;
+    u64 toggleMask = 0;
+    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask);
+    m_LatchedButtons &= toggleMask;
 
-    // 分类按键
-    u64 autokey_buttons = result.buttons & jcWhitelistMask;
-    u64 normal_buttons = result.buttons & ~jcWhitelistMask;
-    result.event = DetermineEvent(autokey_buttons);
+    // 切换模式只响应物理按键的上升沿；重载/恢复后的首帧仅同步
+    u64 physical_toggle_buttons = result.buttons & toggleMask;
+    if (m_NeedsInputSync) {
+        m_PreviousToggleButtons = physical_toggle_buttons;
+        m_NeedsInputSync = false;
+    } else {
+        u64 newly_pressed = physical_toggle_buttons & ~m_PreviousToggleButtons;
+        m_LatchedButtons ^= newly_pressed;
+        m_PreviousToggleButtons = physical_toggle_buttons;
+    }
+
+    // 按住和切换模式可以同时工作，但每个按键只属于其中一种
+    u64 hold_buttons = result.buttons & holdMask;
+    u64 active_buttons = hold_buttons | m_LatchedButtons;
+    u64 normal_buttons = result.buttons & ~(holdMask | toggleMask);
+    result.event = DetermineEvent(active_buttons);
     switch (result.event) {
         case FeatureEvent::IDLE:
         case FeatureEvent::PAUSED:
@@ -70,11 +133,12 @@ void Turbo::Process(ProcessResult& result, bool isJoyCon) {
             TurboStarting();
             return;
         case FeatureEvent::Turbo_EXECUTING:
-            TurboExecuting(autokey_buttons, normal_buttons, result);
+            TurboExecuting(active_buttons, normal_buttons, result);
             return;
         case FeatureEvent::FINISHING:
             TurboFinishing();
-            result.OtherButtons = result.buttons;
+            // 配置为切换连发的物理按压只作为控制输入，不额外透传一次
+            result.OtherButtons = normal_buttons;
             return;
         default:
             return;
@@ -82,12 +146,14 @@ void Turbo::Process(ProcessResult& result, bool isJoyCon) {
 }
 
 // 事件判定
-FeatureEvent Turbo::DetermineEvent(u64 autokey_buttons) {
-    bool has_autokey = (autokey_buttons != 0);
+FeatureEvent Turbo::DetermineEvent(u64 active_buttons) {
+    bool has_autokey = (active_buttons != 0);
     bool turbo_active = m_IsActive;
-    if (turbo_active && CheckRelease(autokey_buttons)) return FeatureEvent::FINISHING;
+    if (turbo_active && CheckRelease(active_buttons)) return FeatureEvent::FINISHING;
     else if (turbo_active) return FeatureEvent::Turbo_EXECUTING;
     else if (has_autokey) {
+        // 切换连发应立即启动；200ms 防误触仅作用于按住连发
+        if (m_LatchedButtons != 0) return FeatureEvent::STARTING;
         if (m_InitialPressTime == 0) m_InitialPressTime = armGetSystemTick();
         u64 elapsed_ns = armTicksToNs(armGetSystemTick() - m_InitialPressTime);
         if (m_DelayStart && elapsed_ns < 200000000ULL) return FeatureEvent::IDLE;
@@ -106,13 +172,13 @@ void Turbo::TurboStarting() {
 }
 
 // 事件处理：连发运行
-void Turbo::TurboExecuting(u64 autokey_buttons, u64 normal_buttons, ProcessResult& result) {
+void Turbo::TurboExecuting(u64 active_buttons, u64 normal_buttons, ProcessResult& result) {
     // 用绝对时间计算当前应该是按下还是松开
     u64 elapsed_ns = armTicksToNs(armGetSystemTick() - m_TurboStartTime);
     u64 cycle_ns = m_PressDurationNs + m_ReleaseDurationNs;
     u64 pos_in_cycle = elapsed_ns % cycle_ns;
     m_IsPressed = (pos_in_cycle < m_PressDurationNs);
-    result.OtherButtons = m_IsPressed ? (normal_buttons | autokey_buttons) : normal_buttons;
+    result.OtherButtons = m_IsPressed ? (normal_buttons | active_buttons) : normal_buttons;
 }
 
 // 事件处理：停止连发
@@ -123,8 +189,15 @@ void Turbo::TurboFinishing() {
     m_InitialPressTime = 0;
 }
 
+void Turbo::ResetState() {
+    TurboFinishing();
+    m_LatchedButtons = 0;
+    m_PreviousToggleButtons = 0;
+    m_NeedsInputSync = true;
+}
+
 // 检测真松开（仅在按下周期检测，避免污染）
-bool Turbo::CheckRelease(u64 autokey_buttons) {
+bool Turbo::CheckRelease(u64 active_buttons) {
     if (!m_IsPressed) return false;
     // 用绝对时间计算当前周期内的位置
     u64 elapsed_ns = armTicksToNs(armGetSystemTick() - m_TurboStartTime);
@@ -132,8 +205,6 @@ bool Turbo::CheckRelease(u64 autokey_buttons) {
     u64 pos_in_cycle = elapsed_ns % cycle_ns;
     // 按下周期开始后30ms内不检测松开
     if (pos_in_cycle < 30000000ULL) return false;
-    if (autokey_buttons == 0) return true;
+    if (active_buttons == 0) return true;
     return false;
 }
-
-

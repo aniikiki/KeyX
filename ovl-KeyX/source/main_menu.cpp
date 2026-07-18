@@ -74,7 +74,9 @@ void MainMenu::RefreshData() {
     // 读取按钮掩码值用于绘制按钮图标
     std::string ConfigPath = m_KeyXinfo.isGlobalConfig ? CONFIG_PATH : m_KeyXinfo.GameConfigPath;
     std::string buttonsStr = IniHelper::getString("AUTOFIRE", "buttons", "0", ConfigPath);
-    m_KeyXinfo.buttons = std::stoull(buttonsStr);
+    std::string toggleButtonsStr = IniHelper::getString("AUTOFIRE", "togglebuttons", "0", ConfigPath);
+    m_KeyXinfo.buttons = std::strtoull(buttonsStr.c_str(), nullptr, 10)
+                       | std::strtoull(toggleButtonsStr.c_str(), nullptr, 10);
     
     // 读取映射配置
     for (int i = 0; i < MappingDef::BUTTON_COUNT; i++) {
