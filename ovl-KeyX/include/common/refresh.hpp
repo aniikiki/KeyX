@@ -15,6 +15,7 @@ namespace Refresh {
         MacroView       = 1 << 5,   // 单个脚本的详情界面
         MacroHotKey     = 1 << 6,   // 单个脚本的快捷键设置界面
         MacroList       = 1 << 7,   // 脚本的游戏列表
+        TouchConfig     = 1 << 8,   // 触摸映射配置界面
         // 可继续添加更多界面...
     };
     

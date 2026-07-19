@@ -11,6 +11,7 @@ struct KeyXInfo {
     u64 buttons;                        // 所有按住/切换连发按键
     bool isAutoRemapEnabled;            // 映射开关
     bool isAutoMacroEnabled;            // 宏开关
+    bool isTouchEnabled;                // 触摸映射开关
     u64 macroHotKey;                    // 宏快捷键
 };
 
@@ -31,12 +32,14 @@ private:
     tsl::elm::ListItem* m_AutoFireEnableItem = nullptr;
     tsl::elm::ListItem* m_AutoRemapEnableItem = nullptr;
     tsl::elm::ListItem* m_AutoMacroEnableItem = nullptr;
+    tsl::elm::ListItem* m_TouchEnableItem = nullptr;
     u64 m_macroHotKey = 0;
 
     void RefreshData();     // 更新数据
     void AutoKeyToggle();   // 连发功能开关
     void AutoRemapToggle(); // 映射功能开关
     void AutoMacroToggle(); // 宏功能开关
+    void TouchToggle();     // 触摸映射开关
     void ConfigToggle();    // 配置切换（全局/独立）
 
 };

@@ -8,7 +8,8 @@ enum class FeatureEvent {
     STARTING,     // 启动功能2
     Turbo_EXECUTING,    // 执行中3
     Macro_EXECUTING,    // 执行中4
-    FINISHING     // 功能结束5
+    Touch_EXECUTING,    // 触摸映射执行中5
+    FINISHING     // 功能结束6
 };
 
 // 处理结果（连发和宏共用）
@@ -19,4 +20,3 @@ struct ProcessResult {
     HidAnalogStickState analog_stick_r;     // 右摇杆
     u64 OtherButtons;                       // 修改后的完整按键
 };
-

@@ -58,7 +58,7 @@ bool App::InitializeIPC() {
     // 设置关闭连发回调
     ipc_server->SetDisableAutoFireCallback([this]() {
         m_CurrentAutoEnable = false;
-        if (!m_CurrentAutoMacroEnable) StopAutoKey();
+        if (!m_CurrentAutoMacroEnable && !m_CurrentTouchEnable) StopAutoKey();
         else UpdateTurboConfig();
     });
     
@@ -74,8 +74,21 @@ bool App::InitializeIPC() {
     // 设置关闭宏回调
     ipc_server->SetDisableMacroCallback([this]() {
         m_CurrentAutoMacroEnable = false;
-        if (!m_CurrentAutoEnable) StopAutoKey();
+        if (!m_CurrentAutoEnable && !m_CurrentTouchEnable) StopAutoKey();
         else UpdateMacroConfig();
+    });
+
+    ipc_server->SetEnableTouchCallback([this]() {
+        m_CurrentTouchEnable = true;
+        // 已有循环时立即补建触摸模块；Tesla 打开期间没有循环，关闭后统一重建。
+        if (autokey_loop) UpdateTouchConfig();
+        else if (m_GameInFocus && !m_OverlayOpen) StartAutoKey();
+    });
+
+    ipc_server->SetDisableTouchCallback([this]() {
+        m_CurrentTouchEnable = false;
+        if (!m_CurrentAutoEnable && !m_CurrentAutoMacroEnable) StopAutoKey();
+        else UpdateTouchConfig();
     });
     
     // 设置开启映射回调
@@ -95,9 +108,12 @@ bool App::InitializeIPC() {
     ipc_server->SetReloadBasicCallback([this]() {
         LoadGameConfig(m_CurrentTid);
         if (m_GameInFocus && !m_OverlayOpen && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
+        if (m_GameInFocus && !m_OverlayOpen && HasAutoKeyFeature() && !autokey_loop) StartAutoKey();
         UpdateTurboConfig();
         UpdateMacroConfig();
+        UpdateTouchConfig();
         UpdateButtonMappingConfig();
+        if (!HasAutoKeyFeature() && autokey_loop) StopAutoKey();
     });
     
     // 设置重载连发配置回调
@@ -108,6 +124,10 @@ bool App::InitializeIPC() {
     // 设置重载宏配置回调
     ipc_server->SetReloadMacroCallback([this]() {
         UpdateMacroConfig();
+    });
+
+    ipc_server->SetReloadTouchCallback([this]() {
+        UpdateTouchConfig();
     });
     
     // 设置重载映射配置回调
@@ -123,7 +143,9 @@ bool App::InitializeIPC() {
 
     ipc_server->SetPauseInputCallback([this]() {
         m_OverlayOpen = true;
-        if (autokey_loop) PauseAutoKey();
+        // Tesla 需要直接读取实体按键。仅暂停线程会让最后一次 HDLS 状态继续
+        // 占用输入，导致停止键等按键偶发丢失；销毁循环可完整释放 HDLS。
+        if (autokey_loop) StopAutoKey();
         if (m_CurrentAutoRemapEnable) ButtonRemapper::RestoreMapping();
     });
 
@@ -131,7 +153,7 @@ bool App::InitializeIPC() {
         m_OverlayOpen = false;
         if (!m_GameInFocus) return;
 
-        if (m_CurrentAutoEnable || m_CurrentAutoMacroEnable) {
+        if (HasAutoKeyFeature()) {
             if (autokey_loop) ResumeAutoKey();
             else StartAutoKey();
         }
@@ -180,7 +202,7 @@ void App::OnGameLaunched(u64 tid) {
     m_GameInFocus = true;
     m_CurrentTid = tid;
     LoadGameConfig(tid);
-    if (!m_OverlayOpen && (m_CurrentAutoEnable || m_CurrentAutoMacroEnable)) StartAutoKey();
+    if (!m_OverlayOpen && HasAutoKeyFeature()) StartAutoKey();
     if (!m_OverlayOpen && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
 }
 
@@ -191,9 +213,9 @@ void App::OnGameRunning(u64 tid) {
     switch (focus) {
         case FocusState::InFocus:
             m_GameInFocus = true;
-            if (!m_OverlayOpen && (m_CurrentAutoEnable || m_CurrentAutoMacroEnable) && autokey_loop) ResumeAutoKey();
-            else if (!m_OverlayOpen && (m_CurrentAutoEnable || m_CurrentAutoMacroEnable) && !autokey_loop) StartAutoKey();
-            else if (!m_CurrentAutoEnable && !m_CurrentAutoMacroEnable && autokey_loop) StopAutoKey();
+            if (!m_OverlayOpen && HasAutoKeyFeature() && autokey_loop) ResumeAutoKey();
+            else if (!m_OverlayOpen && HasAutoKeyFeature() && !autokey_loop) StartAutoKey();
+            else if (!HasAutoKeyFeature() && autokey_loop) StopAutoKey();
             if (!m_OverlayOpen && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
             break;
         case FocusState::OutOfFocus:
@@ -225,8 +247,10 @@ void App::LoadBasicConfig(u64 tid) {
     if (m_FirstLaunch && m_CurrentGlobConfig) {
         bool defaultAutoEnable = ini_getbool("AUTOFIRE", "defaultautoenable", 0, CONFIG_PATH);
         bool defaultRemapEnable = ini_getbool("MAPPING", "defaultautoenable", 0, CONFIG_PATH);
+        bool defaultTouchEnable = ini_getbool("TOUCH", "defaultautoenable", 0, CONFIG_PATH);
         ini_putl("AUTOFIRE", "autoenable", defaultAutoEnable, CONFIG_PATH);
         ini_putl("MAPPING", "autoenable", defaultRemapEnable, CONFIG_PATH);
+        ini_putl("TOUCH", "autoenable", defaultTouchEnable, CONFIG_PATH);
     }
     m_FirstLaunch = false;
     // 此处用来设定是否使用全局配置，还是独立配置
@@ -237,7 +261,12 @@ void App::LoadBasicConfig(u64 tid) {
     const char* switchConfigPath = m_CurrentGlobConfig ? CONFIG_PATH : m_GameConfigPath;
     m_CurrentAutoEnable = ini_getbool("AUTOFIRE", "autoenable", 0, switchConfigPath);
     m_CurrentAutoRemapEnable = ini_getbool("MAPPING", "autoenable", 0, switchConfigPath);
+    m_CurrentTouchEnable = ini_getbool("TOUCH", "autoenable", 0, switchConfigPath);
     m_CurrentAutoMacroEnable = ini_getbool("MACRO", "autoenable", 0, m_GameConfigPath);  // 宏只读取独立配置
+}
+
+bool App::HasAutoKeyFeature() const {
+    return m_CurrentAutoEnable || m_CurrentAutoMacroEnable || m_CurrentTouchEnable;
 }
 
 // 开启按键模块
@@ -245,7 +274,9 @@ bool App::StartAutoKey() {
     std::lock_guard<std::mutex> lock(autokey_mutex);
     // 如果已经创建，则不重复创建
     if (autokey_loop) return true;
-    autokey_loop = std::make_unique<AutoKeyLoop>(m_ConfigPath, m_GameConfigPath, m_CurrentAutoEnable, m_CurrentAutoMacroEnable);
+    autokey_loop = std::make_unique<AutoKeyLoop>(
+        m_ConfigPath, m_GameConfigPath,
+        m_CurrentAutoEnable, m_CurrentAutoMacroEnable, m_CurrentTouchEnable);
     return true;
 }
 
@@ -280,6 +311,13 @@ void App::UpdateMacroConfig() {
     std::lock_guard<std::mutex> lock(autokey_mutex);
     if (autokey_loop) {
         autokey_loop->UpdateMacroFeature(m_CurrentAutoMacroEnable, m_GameConfigPath);
+    }
+}
+
+void App::UpdateTouchConfig() {
+    std::lock_guard<std::mutex> lock(autokey_mutex);
+    if (autokey_loop) {
+        autokey_loop->UpdateTouchFeature(m_CurrentTouchEnable, m_ConfigPath);
     }
 }
 

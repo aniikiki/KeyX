@@ -21,6 +21,11 @@
 #define CMD_PAUSE_INPUT       12  // Tesla 前端打开，暂停输入功能
 #define CMD_RESUME_INPUT      13  // Tesla 前端关闭，恢复输入功能
 
+// 触摸映射控制
+#define CMD_ENABLE_TOUCH      14  // 开启触摸映射
+#define CMD_DISABLE_TOUCH     15  // 关闭触摸映射
+#define CMD_RELOAD_TOUCH      16  // 重载触摸映射配置
+
 // 宏控制
 #define CMD_ENABLE_MACRO      8   // 开启宏
 #define CMD_DISABLE_MACRO     9   // 关闭宏
@@ -46,6 +51,9 @@ struct CommandResult {
     bool should_reload_whitelist;   // 是否需要重载白名单（在响应发送后）
     bool should_pause_input;        // 是否需要暂停输入功能（在响应发送后）
     bool should_resume_input;       // 是否需要恢复输入功能（在响应发送后）
+    bool should_enable_touch;       // 是否需要开启触摸映射（在响应发送后）
+    bool should_disable_touch;      // 是否需要关闭触摸映射（在响应发送后）
+    bool should_reload_touch;       // 是否需要重载触摸映射配置（在响应发送后）
 };
 
 // IPC服务器类
@@ -82,6 +90,9 @@ private:
     std::function<void()> m_ReloadWhitelistCallback;  // 重载白名单回调
     std::function<void()> m_PauseInputCallback;       // Tesla 前端打开回调
     std::function<void()> m_ResumeInputCallback;      // Tesla 前端关闭回调
+    std::function<void()> m_EnableTouchCallback;      // 开启触摸映射回调
+    std::function<void()> m_DisableTouchCallback;     // 关闭触摸映射回调
+    std::function<void()> m_ReloadTouchCallback;      // 重载触摸映射配置回调
     
     // 内部方法
     void StartServer();
@@ -128,5 +139,8 @@ public:
     void SetReloadWhitelistCallback(std::function<void()> callback);
     void SetPauseInputCallback(std::function<void()> callback);
     void SetResumeInputCallback(std::function<void()> callback);
+    void SetEnableTouchCallback(std::function<void()> callback);
+    void SetDisableTouchCallback(std::function<void()> callback);
+    void SetReloadTouchCallback(std::function<void()> callback);
     bool ShouldExit() const { return m_ShouldExit; }
 };

@@ -27,6 +27,11 @@
 #define CMD_PAUSE_INPUT       12  // Tesla 前端打开，暂停输入功能
 #define CMD_RESUME_INPUT      13  // Tesla 前端关闭，恢复输入功能
 
+// 触摸映射控制
+#define CMD_ENABLE_TOUCH      14  // 开启触摸映射
+#define CMD_DISABLE_TOUCH     15  // 关闭触摸映射
+#define CMD_RELOAD_TOUCH      16  // 重载触摸映射配置
+
 // 系统控制
 #define CMD_EXIT              999 // 退出系统模块
 
@@ -163,6 +168,9 @@ public:
 
     Result sendPauseInputCommand();
     Result sendResumeInputCommand();
+    Result sendEnableTouchCommand();
+    Result sendDisableTouchCommand();
+    Result sendReloadTouchCommand();
 };
 
 // 全局实例 - 程序退出时自动调用析构函数

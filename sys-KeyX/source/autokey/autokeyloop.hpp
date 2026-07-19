@@ -5,11 +5,12 @@
 #include "common.hpp"
 #include "turbo.hpp"
 #include "macro.hpp"
+#include "touch_mapper.hpp"
 
 class AutoKeyLoop {
 public:
     // 构造函数
-    AutoKeyLoop(const char* config_path, const char* macroCfgPath, bool enable_turbo, bool enable_macro);
+    AutoKeyLoop(const char* config_path, const char* macroCfgPath, bool enable_turbo, bool enable_macro, bool enable_touch);
     
     // 析构函数
     ~AutoKeyLoop();
@@ -19,6 +20,9 @@ public:
     
     // 更新宏功能
     void UpdateMacroFeature(bool enable, const char* macroCfgPath);
+
+    // 更新触摸映射功能
+    void UpdateTouchFeature(bool enable, const char* config_path);
     
     // 更新按键映射（用于动态重载配置）
     void UpdateButtonMappings(const char* config_path);
@@ -65,8 +69,11 @@ private:
     // 功能模块
     std::unique_ptr<Turbo> m_Turbo;
     std::unique_ptr<Macro> m_Macro;
+    std::unique_ptr<TouchMapper> m_TouchMapper;
     bool m_EnableTurbo;
     bool m_EnableMacro;
+    bool m_EnableTouch;
+    bool m_TouchWasActive;
     
     
     
@@ -103,4 +110,3 @@ private:
     void ApplyForwardMapping(u64& buttons) const;
     u64 ButtonNameToMask(const char* name) const;
 };
-

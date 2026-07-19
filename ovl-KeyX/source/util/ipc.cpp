@@ -103,6 +103,18 @@ Result IPCManager::sendResumeInputCommand() {
     return SendCommand(CMD_RESUME_INPUT, false);
 }
 
+Result IPCManager::sendEnableTouchCommand() {
+    return SendCommand(CMD_ENABLE_TOUCH, true);
+}
+
+Result IPCManager::sendDisableTouchCommand() {
+    return SendCommand(CMD_DISABLE_TOUCH, false);
+}
+
+Result IPCManager::sendReloadTouchCommand() {
+    return SendCommand(CMD_RELOAD_TOUCH, false);
+}
+
 Result IPCManager::sendExitCommand() {
     return SendCommand(CMD_EXIT, false);
 }

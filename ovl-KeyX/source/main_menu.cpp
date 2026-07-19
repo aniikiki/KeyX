@@ -52,10 +52,12 @@ void MainMenu::RefreshData() {
         m_KeyXinfo.isAutoFireEnabled = IniHelper::getBool("AUTOFIRE", "autoenable", false, SwitchConfigPath);
         m_KeyXinfo.isAutoRemapEnabled = IniHelper::getBool("MAPPING", "autoenable", false, SwitchConfigPath);
         m_KeyXinfo.isAutoMacroEnabled = IniHelper::getBool("MACRO", "autoenable", false, m_KeyXinfo.GameConfigPath);   // 宏只读独立游戏配置
+        m_KeyXinfo.isTouchEnabled = IniHelper::getBool("TOUCH", "autoenable", false, SwitchConfigPath);
     } else {    
         m_KeyXinfo.isAutoFireEnabled = false;
         m_KeyXinfo.isAutoRemapEnabled = false;
         m_KeyXinfo.isAutoMacroEnabled = false;
+        m_KeyXinfo.isTouchEnabled = false;
     }
     // 更新功能开关
     if (m_AutoFireEnableItem != nullptr) {
@@ -69,6 +71,10 @@ void MainMenu::RefreshData() {
     if (m_AutoMacroEnableItem != nullptr) {
         m_AutoMacroEnableItem->setValue(s_switchText[m_KeyXinfo.isAutoMacroEnabled]);
         m_AutoMacroEnableItem->setValueColor(s_switchColor[m_KeyXinfo.isAutoMacroEnabled]);
+    }
+    if (m_TouchEnableItem != nullptr) {
+        m_TouchEnableItem->setValue(s_switchText[m_KeyXinfo.isTouchEnabled]);
+        m_TouchEnableItem->setValueColor(s_switchColor[m_KeyXinfo.isTouchEnabled]);
     }
 
     // 读取按钮掩码值用于绘制按钮图标
@@ -139,6 +145,21 @@ void MainMenu::AutoMacroToggle() {
     IniHelper::setBool("MACRO", "autoenable", m_KeyXinfo.isAutoMacroEnabled, m_KeyXinfo.GameConfigPath);
 }
 
+// 触摸映射功能开关
+void MainMenu::TouchToggle() {
+    if (!m_KeyXinfo.isInGame) return;
+    Result rc = m_KeyXinfo.isTouchEnabled
+        ? g_ipcManager.sendDisableTouchCommand()
+        : g_ipcManager.sendEnableTouchCommand();
+    if (R_FAILED(rc)) return;
+    m_KeyXinfo.isTouchEnabled = !m_KeyXinfo.isTouchEnabled;
+    m_TouchEnableItem->setValue(s_switchText[m_KeyXinfo.isTouchEnabled]);
+    m_TouchEnableItem->setValueColor(s_switchColor[m_KeyXinfo.isTouchEnabled]);
+    IniHelper::setBool("AUTOFIRE", "globconfig", m_KeyXinfo.isGlobalConfig, m_KeyXinfo.GameConfigPath);
+    IniHelper::setBool("TOUCH", "autoenable", m_KeyXinfo.isTouchEnabled, m_KeyXinfo.GameConfigPath);
+    IniHelper::setBool("TOUCH", "autoenable", m_KeyXinfo.isTouchEnabled, CONFIG_PATH);
+}
+
 // 配置切换（全局/独立）
 void MainMenu::ConfigToggle() {
     if (!m_KeyXinfo.isInGame) return;
@@ -149,6 +170,8 @@ void MainMenu::ConfigToggle() {
     IniHelper::setBool("MAPPING", "autoenable", m_KeyXinfo.isAutoRemapEnabled, m_KeyXinfo.GameConfigPath);
     IniHelper::setBool("MAPPING", "autoenable", m_KeyXinfo.isAutoRemapEnabled, CONFIG_PATH);
     IniHelper::setBool("MACRO", "autoenable", m_KeyXinfo.isAutoMacroEnabled, m_KeyXinfo.GameConfigPath);
+    IniHelper::setBool("TOUCH", "autoenable", m_KeyXinfo.isTouchEnabled, m_KeyXinfo.GameConfigPath);
+    IniHelper::setBool("TOUCH", "autoenable", m_KeyXinfo.isTouchEnabled, CONFIG_PATH);
     RefreshData();   // 刷新界面显示
     Result rc = g_ipcManager.sendReloadBasicCommand();
     if (R_FAILED(rc)) return;
@@ -165,7 +188,7 @@ MainMenu::MainMenu()
 tsl::elm::Element* MainMenu::createUI()
 {  
     // 动态计算文本区域高度
-    s32 TextAreaHeight = (TESLA_VIEW_HEIGHT - TESLA_TITLE_HEIGHT - TESLA_BOTTOM_HEIGHT) - (4 * LIST_ITEM_HEIGHT) - SPACING * 2;
+    s32 TextAreaHeight = (TESLA_VIEW_HEIGHT - TESLA_TITLE_HEIGHT - TESLA_BOTTOM_HEIGHT) - (5 * LIST_ITEM_HEIGHT) - SPACING * 2;
 
     // 创建覆盖层框架，使用自定义头部（指定高度97避免滚动条）
     auto frame = new tsl::elm::HeaderOverlayFrame(TESLA_TITLE_HEIGHT);
@@ -205,8 +228,8 @@ tsl::elm::Element* MainMenu::createUI()
             tsl::Color yellowColor = {0xFF, 0xFF, 0x00, 0xFF};         // 黄色：连发小点
             tsl::Color redColor = {0xFF, 0x00, 0x00, 0xFF};            // 红色：宏小点
             
-            const s32 buttonSize = 25;   // 按钮大小（保持不变）
-            const s32 rowSpacing = 7;    // 行间距（8 × 0.9 ≈ 7）
+            const s32 buttonSize = 22;
+            const s32 rowSpacing = 4;
             
             // === 水平位置计算 ===
             // 左侧：方向键组
@@ -226,10 +249,10 @@ tsl::elm::Element* MainMenu::createUI()
             s32 rColumnX = yButtonX - 32;  // R和ZR垂直对齐（35 × 0.9 ≈ 32）
             
             // === 垂直位置计算 ===
-            const s32 layoutTotalHeight = 7 * buttonSize + 6 * rowSpacing;
+            const s32 layoutTotalHeight = 6 * buttonSize + 5 * rowSpacing;
             
             // 垂直居中
-            s32 baseY = y + (h - layoutTotalHeight) / 2 + buttonSize - 10;
+            s32 baseY = y + (h - layoutTotalHeight) / 2 + buttonSize;
             
             // === 定义 drawButton 函数（根据映射显示按键）===
             auto drawButton = [&](const char* sourceName, s32 posX, s32 posY) {
@@ -290,11 +313,11 @@ tsl::elm::Element* MainMenu::createUI()
             
             // 行2: L, R
             s32 row2Y = baseY + buttonSize + rowSpacing;
-            drawButton("L", lColumnX, row2Y + 9);
-            drawButton("R", rColumnX, row2Y + 9);
+            drawButton("L", lColumnX, row2Y + 6);
+            drawButton("R", rColumnX, row2Y + 6);
             
             // Select(-) 和 Start(+)：Y坐标在 ZR 和 R 之间
-            s32 selectStartY = (row1Y + (row2Y + 9)) / 2;
+            s32 selectStartY = (row1Y + (row2Y + 6)) / 2;
             drawButton("Select", dpadLeftX, selectStartY);
             drawButton("Start", aButtonX, selectStartY);
             
@@ -369,6 +392,17 @@ tsl::elm::Element* MainMenu::createUI()
         return false;
     });
     mainList->addItem(m_AutoMacroEnableItem);
+
+    m_TouchEnableItem = new tsl::elm::ListItem("触摸映射", s_switchText[m_KeyXinfo.isTouchEnabled]);
+    m_TouchEnableItem->setValueColor(s_switchColor[m_KeyXinfo.isTouchEnabled]);
+    m_TouchEnableItem->setClickListener([this](u64 keys) {
+        if (keys & HidNpadButton_A) {
+            TouchToggle();
+            return true;
+        }
+        return false;
+    });
+    mainList->addItem(m_TouchEnableItem);
 
     // 创建切换配置列表项
     auto ConfigSwitchItem = new tsl::elm::ListItem("切换配置", m_KeyXinfo.isGlobalConfig ? "全局配置" : "独立配置");

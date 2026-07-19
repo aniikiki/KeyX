@@ -38,6 +38,9 @@ private:
     
     // 宏功能相关配置
     bool m_CurrentAutoMacroEnable = false;         // 宏功能是否自动启动
+
+    // 触摸映射功能相关配置
+    bool m_CurrentTouchEnable = false;
     
     // 初始化配置路径（确保目录存在）
     bool InitializeConfigPath();
@@ -81,6 +84,11 @@ private:
     
     // 更新宏配置（线程安全）
     void UpdateMacroConfig();
+
+    // 更新触摸映射配置（线程安全）
+    void UpdateTouchConfig();
+
+    bool HasAutoKeyFeature() const;
     
     // 更新按键映射配置（线程安全）
     void UpdateButtonMappingConfig();

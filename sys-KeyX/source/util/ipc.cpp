@@ -139,6 +139,18 @@ void IPCServer::SetResumeInputCallback(std::function<void()> callback) {
     m_ResumeInputCallback = callback;
 }
 
+void IPCServer::SetEnableTouchCallback(std::function<void()> callback) {
+    m_EnableTouchCallback = callback;
+}
+
+void IPCServer::SetDisableTouchCallback(std::function<void()> callback) {
+    m_DisableTouchCallback = callback;
+}
+
+void IPCServer::SetReloadTouchCallback(std::function<void()> callback) {
+    m_ReloadTouchCallback = callback;
+}
+
 // 静态线程入口函数
 void IPCServer::ThreadEntry(void* arg) {
     IPCServer* server = static_cast<IPCServer*>(arg);
@@ -318,6 +330,18 @@ void IPCServer::WaitAndProcessRequest() {
         if (cmd_result.should_resume_input) {
             if (m_ResumeInputCallback) m_ResumeInputCallback();
         }
+
+        if (cmd_result.should_enable_touch) {
+            if (m_EnableTouchCallback) m_EnableTouchCallback();
+        }
+
+        if (cmd_result.should_disable_touch) {
+            if (m_DisableTouchCallback) m_DisableTouchCallback();
+        }
+
+        if (cmd_result.should_reload_touch) {
+            if (m_ReloadTouchCallback) m_ReloadTouchCallback();
+        }
         
         // 退出服务器回调
         if (cmd_result.should_exit_server) {
@@ -395,6 +419,21 @@ CommandResult IPCServer::HandleCommand(u64 cmd_id) {
         case CMD_RESUME_INPUT:
             WriteResponseToTLS(0);
             result.should_resume_input = true;
+            break;
+
+        case CMD_ENABLE_TOUCH:
+            WriteResponseToTLS(0);
+            result.should_enable_touch = true;
+            break;
+
+        case CMD_DISABLE_TOUCH:
+            WriteResponseToTLS(0);
+            result.should_disable_touch = true;
+            break;
+
+        case CMD_RELOAD_TOUCH:
+            WriteResponseToTLS(0);
+            result.should_reload_touch = true;
             break;
             
         case CMD_EXIT:

@@ -42,6 +42,7 @@ void __appInit(void) {
   fsInitialize();
   fsdevMountSdmc();
   hidInitialize();
+  hidInitializeTouchScreen();
   hiddbgInitialize();
   hidsysInitialize();
   pmdmntInitialize();

@@ -71,7 +71,7 @@ alignas(0x1000) char AutoKeyLoop::thread_stack[4 * 1024];
 alignas(0x1000) u8 AutoKeyLoop::hdls_work_buffer[0x1000];
 
 // 构造函数
-AutoKeyLoop::AutoKeyLoop(const char* config_path, const char* macroCfgPath, bool enable_turbo, bool enable_macro) {
+AutoKeyLoop::AutoKeyLoop(const char* config_path, const char* macroCfgPath, bool enable_turbo, bool enable_macro, bool enable_touch) {
     // 初始化HDLS工作缓冲区
     Result rc = hiddbgAttachHdlsWorkBuffer(&m_HdlsSessionId, hdls_work_buffer, sizeof(hdls_work_buffer));
     if (R_FAILED(rc)) return;
@@ -92,12 +92,15 @@ AutoKeyLoop::AutoKeyLoop(const char* config_path, const char* macroCfgPath, bool
     // 初始化功能开关
     m_EnableTurbo = enable_turbo;
     m_EnableMacro = enable_macro;
+    m_EnableTouch = enable_touch;
+    m_TouchWasActive = false;
     // 根据开关创建功能模块
     if (m_EnableTurbo) {
         m_Turbo = std::make_unique<Turbo>(config_path);
         m_isJCRightHand = m_Turbo->IsJCRightHand();
     }
     if (m_EnableMacro) m_Macro = std::make_unique<Macro>(macroCfgPath);
+    if (m_EnableTouch) m_TouchMapper = std::make_unique<TouchMapper>(config_path);
     
     // 初始化手柄类型
     m_ControllerType = ControllerType::C_NONE;
@@ -165,6 +168,9 @@ void AutoKeyLoop::MainLoop() {
             case FeatureEvent::Macro_EXECUTING:
                 ApplyHdlsState(result);
                 break;
+            case FeatureEvent::Touch_EXECUTING:
+                ApplyHdlsState(result);
+                break;
             case FeatureEvent::FINISHING:
                 result.analog_stick_l = {0};
                 result.analog_stick_r = {0};
@@ -191,19 +197,47 @@ void AutoKeyLoop::DetermineEvent(ProcessResult& result) {
             if (m_ControllerType == ControllerType::C_NONE) m_Turbo->ResetState();
             else m_Turbo->SynchronizeInput(result.buttons, m_isJoyCon);
         }
+        if (m_ControllerType == ControllerType::C_NONE && m_TouchMapper) {
+            m_TouchMapper->ResetState();
+            m_TouchWasActive = false;
+        }
         result.event = FeatureEvent::PAUSED;
         return;
     }
     if (m_Macro) {
         m_Macro->Process(result);
-        if (result.event == FeatureEvent::STARTING && m_Turbo) m_Turbo->TurboFinishing();
+        if (result.event == FeatureEvent::STARTING) {
+            if (m_Turbo) m_Turbo->TurboFinishing();
+            if (m_TouchMapper) m_TouchMapper->ResetState();
+            m_TouchWasActive = false;
+        }
         if (result.event != FeatureEvent::IDLE) {
             if (m_Turbo) m_Turbo->SynchronizeInput(result.buttons, m_isJoyCon);
             return;
         }
     }
+
+    u64 physicalButtons = result.buttons;
+    u64 touchButtons = m_TouchMapper ? m_TouchMapper->Process() : 0;
+    bool touchActive = touchButtons != 0;
+    bool touchStarted = touchActive && !m_TouchWasActive;
+    bool touchFinished = !touchActive && m_TouchWasActive;
+    m_TouchWasActive = touchActive;
+    result.buttons |= touchButtons;
+
     if (m_Turbo) {
         m_Turbo->Process(result, m_isJoyCon);
+        if (result.event != FeatureEvent::IDLE) return;
+    }
+
+    if (touchActive) {
+        result.OtherButtons = result.buttons;
+        result.event = touchStarted ? FeatureEvent::STARTING : FeatureEvent::Touch_EXECUTING;
+        return;
+    }
+    if (touchFinished) {
+        result.OtherButtons = physicalButtons;
+        result.event = FeatureEvent::FINISHING;
         return;
     }
     result.event = FeatureEvent::IDLE;
@@ -214,6 +248,8 @@ void AutoKeyLoop::DetermineEvent(ProcessResult& result) {
 void AutoKeyLoop::Pause() {
     if (m_Turbo) m_Turbo->ResetState();
     if (m_Macro) m_Macro->MacroFinishing();
+    if (m_TouchMapper) m_TouchMapper->ResetState();
+    m_TouchWasActive = false;
     m_PauseStateRestored = false;
     m_IsPaused = true;
 }
@@ -243,6 +279,14 @@ void AutoKeyLoop::UpdateMacroFeature(bool enable, const char* macroCfgPath) {
     else if (m_EnableMacro && !enable && m_Macro) m_Macro.reset();
     else if (!m_EnableMacro && enable) m_Macro = std::make_unique<Macro>(macroCfgPath);
     m_EnableMacro = enable;
+}
+
+void AutoKeyLoop::UpdateTouchFeature(bool enable, const char* config_path) {
+    if (m_EnableTouch && enable && m_TouchMapper) m_TouchMapper->LoadConfig(config_path);
+    else if (m_EnableTouch && !enable && m_TouchMapper) m_TouchMapper.reset();
+    else if (!m_EnableTouch && enable) m_TouchMapper = std::make_unique<TouchMapper>(config_path);
+    m_EnableTouch = enable;
+    m_TouchWasActive = false;
 }
 
 // 按键名转换为掩码

@@ -3,6 +3,7 @@
 #include "turbo_setting.hpp"
 #include "remap_setting.hpp"
 #include "macro_setting.hpp"
+#include "touch_setting.hpp"
 #include "sysmodule.hpp"
 #include "refresh.hpp"
 #include "about.hpp"
@@ -65,6 +66,16 @@ tsl::elm::Element* SettingMenu::createUI() {
         return false;
     });
     list->addItem(listItemMacro);
+
+    auto listItemTouch = new tsl::elm::ListItem("触摸设置", ">");
+    listItemTouch->setClickListener([](u64 keys) {
+        if (keys & HidNpadButton_A) {
+            tsl::changeTo<SettingTouch>();
+            return true;
+        }
+        return false;
+    });
+    list->addItem(listItemTouch);
 
     auto ItemModuleManager = new tsl::elm::CategoryHeader(" 功能模块管理 切换自启动 开关");
     list->addItem(ItemModuleManager);

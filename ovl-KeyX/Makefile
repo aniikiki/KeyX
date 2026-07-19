@@ -22,7 +22,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 # 按键助手 (12 bytes)
 
 APP_TITLE	:=	KeyX        
-APP_VERSION :=	2.1.6
+APP_VERSION :=	2.2.0
 
 TARGET		:=	ovl-KeyX
 BUILD		:=	build
@@ -30,6 +30,7 @@ SOURCES		:=	source \
 				source/about \
 				source/turbo \
 				source/remap \
+				source/touch \
 				source/macro \
 				source/macro/store \
 				source/util \
@@ -41,6 +42,7 @@ INCLUDES	:=	include \
 				include/about \
 				include/turbo \
 				include/remap \
+				include/touch \
 				include/macro \
 				include/macro/store \
 				include/util \
