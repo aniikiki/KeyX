@@ -32,6 +32,7 @@ private:
     u64 m_HoldButtonMask;       // 按住连发按键
     u64 m_ToggleButtonMask;     // 切换连发按键
     u64 m_StopButtonMask;       // 停止所有切换连发的独立按键
+    u64 m_TriggerButtonMask;    // 可选连发功能键（始终透传）
     u64 m_PressDurationNs;      // 按下持续时间（纳秒）
     u64 m_ReleaseDurationNs;    // 松开持续时间（纳秒）
     
@@ -58,5 +59,6 @@ private:
     
     // 辅助函数
     bool CheckRelease(u64 active_buttons);
-    void GetAllowedButtonMasks(bool isJoyCon, u64& holdMask, u64& toggleMask, u64& stopMask) const;
+    void GetAllowedButtonMasks(bool isJoyCon, u64& holdMask, u64& toggleMask,
+                               u64& stopMask, u64& triggerMask) const;
 };

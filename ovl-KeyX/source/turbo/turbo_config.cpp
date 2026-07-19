@@ -19,15 +19,18 @@ namespace {
     u64 s_HoldTurboButtons = 0;
     u64 s_ToggleTurboButtons = 0;
     u64 s_StopTurboButton = 0;
+    u64 s_TriggerTurboButton = 0;
 
     enum class TurboButtonMode {
         Off,
         Hold,
         Toggle,
         Stop,
+        Trigger,
     };
 
     TurboButtonMode GetButtonMode(u64 flag) {
+        if (s_TriggerTurboButton & flag) return TurboButtonMode::Trigger;
         if (s_StopTurboButton & flag) return TurboButtonMode::Stop;
         if (s_ToggleTurboButtons & flag) return TurboButtonMode::Toggle;
         if (s_HoldTurboButtons & flag) return TurboButtonMode::Hold;
@@ -39,6 +42,7 @@ namespace {
             case TurboButtonMode::Hold: return "按住";
             case TurboButtonMode::Toggle: return "切换";
             case TurboButtonMode::Stop: return "停止键";
+            case TurboButtonMode::Trigger: return "功能键";
             default: return "关闭";
         }
     }
@@ -48,6 +52,7 @@ namespace {
             case TurboButtonMode::Hold: return {0x00, 0xDD, 0xFF, 0xFF};
             case TurboButtonMode::Toggle: return {0xFF, 0xD0, 0x00, 0xFF};
             case TurboButtonMode::Stop: return {0xFF, 0x55, 0x75, 0xFF};
+            case TurboButtonMode::Trigger: return {0x7C, 0xFF, 0x6B, 0xFF};
             default: return tsl::style::color::ColorDescription;
         }
     }
@@ -56,6 +61,7 @@ namespace {
         IniHelper::setString("AUTOFIRE", "buttons", std::to_string(s_HoldTurboButtons), configPath);
         IniHelper::setString("AUTOFIRE", "togglebuttons", std::to_string(s_ToggleTurboButtons), configPath);
         IniHelper::setString("AUTOFIRE", "stopbutton", std::to_string(s_StopTurboButton), configPath);
+        IniHelper::setString("AUTOFIRE", "triggerbutton", std::to_string(s_TriggerTurboButton), configPath);
     }
     
     int FrequencyFromDurations(int pressMs, int releaseMs) {
@@ -98,16 +104,21 @@ SettingTurboConfig::SettingTurboConfig(bool isGlobal, u64 currentTitleId)
     m_DelayStartMs = IniHelper::getInt("AUTOFIRE", "delaystartms", 200, m_ConfigPath);
     if (m_DelayStartMs < DELAY_START_MIN_MS) m_DelayStartMs = DELAY_START_MIN_MS;
     if (m_DelayStartMs > DELAY_START_MAX_MS) m_DelayStartMs = DELAY_START_MAX_MS;
-    // 读取互斥的按住/切换连发/停止键配置
+    // 读取互斥的按住/切换连发/停止键/功能键配置
     std::string holdButtons = IniHelper::getString("AUTOFIRE", "buttons", "0", m_ConfigPath);
     std::string toggleButtons = IniHelper::getString("AUTOFIRE", "togglebuttons", "0", m_ConfigPath);
     std::string stopButton = IniHelper::getString("AUTOFIRE", "stopbutton", "0", m_ConfigPath);
+    std::string triggerButton = IniHelper::getString("AUTOFIRE", "triggerbutton", "0", m_ConfigPath);
     s_HoldTurboButtons = std::strtoull(holdButtons.c_str(), nullptr, 10);
     s_ToggleTurboButtons = std::strtoull(toggleButtons.c_str(), nullptr, 10);
     s_StopTurboButton = std::strtoull(stopButton.c_str(), nullptr, 10);
+    s_TriggerTurboButton = std::strtoull(triggerButton.c_str(), nullptr, 10);
     s_HoldTurboButtons &= ~s_ToggleTurboButtons;
     s_StopTurboButton &= ~(s_HoldTurboButtons | s_ToggleTurboButtons);
     if (s_StopTurboButton != 0) s_StopTurboButton &= (~s_StopTurboButton + 1ULL);
+    s_TriggerTurboButton &= ~(s_HoldTurboButtons | s_ToggleTurboButtons | s_StopTurboButton);
+    if (s_TriggerTurboButton != 0)
+        s_TriggerTurboButton &= (~s_TriggerTurboButton + 1ULL);
 }
 
 tsl::elm::Element* SettingTurboConfig::createUI() {
@@ -176,7 +187,7 @@ tsl::elm::Element* SettingTurboConfig::createUI() {
 
     // 为新增的延迟滑条留出空间，同时保持按键布局完整可见
     s32 buttonDisplayHeight = 180;
-    // 添加按键布局显示区域：蓝色=按住，黄色=切换，红色=停止键
+    // 添加按键布局显示区域：蓝色=按住，黄色=切换，红色=停止键，绿色=功能键
     auto buttonDisplay = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer* r, s32 x, s32 y, s32 w, s32 h) {
         tsl::Color whiteColor = {0xFF, 0xFF, 0xFF, 0xFF};
         auto buttonColor = [&](u64 flag) {
@@ -278,7 +289,7 @@ tsl::elm::Element* SettingTurboButton::createUI() {
         renderer->drawString("\uE0EE  重置", false, 270, 693, 23, renderer->a(tsl::style::color::ColorText));
     }));
     auto list = new tsl::elm::List();
-    list->addItem(new tsl::elm::CategoryHeader("关闭 → 按住 → 切换 → 停止键"));
+    list->addItem(new tsl::elm::CategoryHeader("关闭 → 按住 → 切换 → 停止键 → 功能键"));
     m_buttonItems.clear();
     for (const auto& btn : TurboConfig::Buttons) {
         const char* icon = HidHelper::getIconByMask(btn.flag);
@@ -294,19 +305,26 @@ tsl::elm::Element* SettingTurboButton::createUI() {
                     s_HoldTurboButtons |= btn.flag;
                     s_ToggleTurboButtons &= ~btn.flag;
                     s_StopTurboButton &= ~btn.flag;
+                    s_TriggerTurboButton &= ~btn.flag;
                     break;
                 case TurboButtonMode::Hold:
                     s_HoldTurboButtons &= ~btn.flag;
                     s_ToggleTurboButtons |= btn.flag;
                     s_StopTurboButton &= ~btn.flag;
+                    s_TriggerTurboButton &= ~btn.flag;
                     break;
                 case TurboButtonMode::Toggle:
                     s_HoldTurboButtons &= ~btn.flag;
                     s_ToggleTurboButtons &= ~btn.flag;
                     s_StopTurboButton = btn.flag; // 新停止键自动替换旧停止键
+                    s_TriggerTurboButton &= ~btn.flag;
                     break;
                 case TurboButtonMode::Stop:
                     s_StopTurboButton = 0;
+                    s_TriggerTurboButton = btn.flag; // 新功能键自动替换旧功能键
+                    break;
+                case TurboButtonMode::Trigger:
+                    s_TriggerTurboButton = 0;
                     break;
             }
 
@@ -346,6 +364,7 @@ bool SettingTurboButton::handleInput(u64 keysDown, u64 keysHeld, const HidTouchS
         s_HoldTurboButtons = 0;
         s_ToggleTurboButtons = 0;
         s_StopTurboButton = 0;
+        s_TriggerTurboButton = 0;
         SaveButtonMasks(m_configPath);
         Refresh::RefrRequest(Refresh::TurboButton);
         g_ipcManager.sendReloadAutoFireCommand();

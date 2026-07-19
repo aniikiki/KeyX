@@ -37,6 +37,7 @@ Turbo::Turbo(const char* config_path) {
     m_HoldButtonMask = 0;
     m_ToggleButtonMask = 0;
     m_StopButtonMask = 0;
+    m_TriggerButtonMask = 0;
     m_PressDurationNs = 100 * 1000000ULL;   // 默认100ms
     m_ReleaseDurationNs = 100 * 1000000ULL; // 默认100ms
     m_IsActive = false;
@@ -60,15 +61,21 @@ void Turbo::LoadConfig(const char* config_path) {
     char hold_buttons_str[32];
     char toggle_buttons_str[32];
     char stop_button_str[32];
+    char trigger_button_str[32];
     ini_gets("AUTOFIRE", "buttons", "0", hold_buttons_str, sizeof(hold_buttons_str), config_path);
     ini_gets("AUTOFIRE", "togglebuttons", "0", toggle_buttons_str, sizeof(toggle_buttons_str), config_path);
     ini_gets("AUTOFIRE", "stopbutton", "0", stop_button_str, sizeof(stop_button_str), config_path);
+    ini_gets("AUTOFIRE", "triggerbutton", "0", trigger_button_str, sizeof(trigger_button_str), config_path);
     u64 hold_buttons = strtoull(hold_buttons_str, nullptr, 10);
     u64 toggle_buttons = strtoull(toggle_buttons_str, nullptr, 10);
     u64 stop_button = strtoull(stop_button_str, nullptr, 10);
+    u64 trigger_button = strtoull(trigger_button_str, nullptr, 10);
     hold_buttons &= ~toggle_buttons;  // 配置异常重叠时，切换模式优先
     stop_button &= ~(hold_buttons | toggle_buttons);
     if (stop_button != 0) stop_button &= (~stop_button + 1ULL); // 停止键只允许一个
+    trigger_button &= ~(hold_buttons | toggle_buttons | stop_button);
+    if (trigger_button != 0)
+        trigger_button &= (~trigger_button + 1ULL); // 功能键只允许一个且不能与其他角色重叠
 
     u64 config_path_hash = HashConfigPath(config_path);
     bool config_changed = m_ConfigPathHash != 0 && m_ConfigPathHash != config_path_hash;
@@ -76,6 +83,7 @@ void Turbo::LoadConfig(const char* config_path) {
     m_HoldButtonMask = hold_buttons;
     m_ToggleButtonMask = toggle_buttons;
     m_StopButtonMask = stop_button;
+    m_TriggerButtonMask = trigger_button;
     if (config_changed) {
         m_LatchedButtons = 0;
     } else {
@@ -100,10 +108,12 @@ void Turbo::LoadConfig(const char* config_path) {
 
 }
 
-void Turbo::GetAllowedButtonMasks(bool isJoyCon, u64& holdMask, u64& toggleMask, u64& stopMask) const {
+void Turbo::GetAllowedButtonMasks(bool isJoyCon, u64& holdMask, u64& toggleMask,
+                                  u64& stopMask, u64& triggerMask) const {
     holdMask = m_HoldButtonMask;
     toggleMask = m_ToggleButtonMask;
     stopMask = m_StopButtonMask;
+    triggerMask = m_TriggerButtonMask;
     if (!isJoyCon) return;
 
     u64 sideMask = m_isJCRightHand ? RIGHT_JOYCON_BUTTONS : LEFT_JOYCON_BUTTONS;
@@ -116,10 +126,12 @@ void Turbo::SynchronizeInput(u64 buttons, bool isJoyCon) {
     u64 holdMask = 0;
     u64 toggleMask = 0;
     u64 stopMask = 0;
-    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask, stopMask);
+    u64 triggerMask = 0;
+    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask, stopMask, triggerMask);
     (void)holdMask;
     m_LatchedButtons &= toggleMask;
-    m_PreviousToggleButtons = buttons & toggleMask;
+    bool triggerHeld = triggerMask == 0 || (buttons & triggerMask) != 0;
+    m_PreviousToggleButtons = triggerHeld ? (buttons & toggleMask) : 0;
     m_StopButtonWasPressed = (buttons & stopMask) != 0;
     m_NeedsInputSync = false;
     m_StopInputConsumed = false;
@@ -135,11 +147,13 @@ void Turbo::Process(ProcessResult& result, bool isJoyCon) {
     u64 holdMask = 0;
     u64 toggleMask = 0;
     u64 stopMask = 0;
-    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask, stopMask);
+    u64 triggerMask = 0;
+    GetAllowedButtonMasks(isJoyCon, holdMask, toggleMask, stopMask, triggerMask);
     m_LatchedButtons &= toggleMask;
 
-    // 切换键只负责开启；关闭统一由独立停止键完成。
-    u64 physical_toggle_buttons = result.buttons & toggleMask;
+    // 未配置功能键时保持旧逻辑；配置后，功能键是按住连发的持续条件、切换连发的启动条件。
+    bool trigger_held = triggerMask == 0 || (result.buttons & triggerMask) != 0;
+    u64 physical_toggle_buttons = trigger_held ? (result.buttons & toggleMask) : 0;
     u64 physical_stop_button = result.buttons & stopMask;
     bool stop_button_is_pressed = physical_stop_button != 0;
     bool stop_pressed = false;
@@ -172,9 +186,12 @@ void Turbo::Process(ProcessResult& result, bool isJoyCon) {
     }
 
     // 按住和切换模式可以同时工作，但每个按键只属于其中一种。
-    u64 hold_buttons = result.buttons & holdMask;
+    u64 hold_buttons = trigger_held ? (result.buttons & holdMask) : 0;
     u64 active_buttons = hold_buttons | m_LatchedButtons;
-    u64 normal_buttons = result.buttons & ~(holdMask | toggleMask);
+    // 功能键始终保留；目标键在未满足组合条件时作为普通按键透传。
+    u64 consumed_turbo_buttons = trigger_held ? (holdMask | toggleMask) : 0;
+    consumed_turbo_buttons |= m_LatchedButtons;
+    u64 normal_buttons = result.buttons & ~consumed_turbo_buttons;
     if (m_StopInputConsumed || stop_cycle_finished)
         normal_buttons &= ~stopMask;
 
