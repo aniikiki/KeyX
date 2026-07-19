@@ -9,6 +9,7 @@ struct KeyXInfo {
     bool isAutoFireEnabled;             // 连发开关
     std::string GameConfigPath;         // 配置文件路径
     u64 buttons;                        // 所有按住/切换连发按键
+    u64 stopButton;                     // 切换连发停止键
     bool isAutoRemapEnabled;            // 映射开关
     bool isAutoMacroEnabled;            // 宏开关
     bool isTouchEnabled;                // 触摸映射开关

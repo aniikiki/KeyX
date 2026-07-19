@@ -81,8 +81,10 @@ void MainMenu::RefreshData() {
     std::string ConfigPath = m_KeyXinfo.isGlobalConfig ? CONFIG_PATH : m_KeyXinfo.GameConfigPath;
     std::string buttonsStr = IniHelper::getString("AUTOFIRE", "buttons", "0", ConfigPath);
     std::string toggleButtonsStr = IniHelper::getString("AUTOFIRE", "togglebuttons", "0", ConfigPath);
+    std::string stopButtonStr = IniHelper::getString("AUTOFIRE", "stopbutton", "0", ConfigPath);
     m_KeyXinfo.buttons = std::strtoull(buttonsStr.c_str(), nullptr, 10)
                        | std::strtoull(toggleButtonsStr.c_str(), nullptr, 10);
+    m_KeyXinfo.stopButton = std::strtoull(stopButtonStr.c_str(), nullptr, 10);
     
     // 读取映射配置
     for (int i = 0; i < MappingDef::BUTTON_COUNT; i++) {
@@ -227,6 +229,7 @@ tsl::elm::Element* MainMenu::createUI()
             tsl::Color blueColor = {0x00, 0xDD, 0xFF, 0xFF};           // 亮天蓝色：已映射
             tsl::Color yellowColor = {0xFF, 0xFF, 0x00, 0xFF};         // 黄色：连发小点
             tsl::Color redColor = {0xFF, 0x00, 0x00, 0xFF};            // 红色：宏小点
+            tsl::Color purpleColor = {0xB5, 0x6C, 0xFF, 0xFF};         // 紫色：停止键小点
             
             const s32 buttonSize = 22;
             const s32 rowSpacing = 4;
@@ -279,9 +282,10 @@ tsl::elm::Element* MainMenu::createUI()
                 renderer->drawString(targetIcon, false, posX, posY, buttonSize, 
                                     renderer->a(color));
                 
-                // 检查目标按键是否有连发和宏
+                // 检查目标按键是否有连发、停止键或宏
                 u64 flag = HidHelper::getButtonFlag(targetName);
                 bool hasTurbo = (m_KeyXinfo.buttons & flag) != 0;
+                bool hasStop = (m_KeyXinfo.stopButton & flag) != 0;
                 bool hasMacro = (m_KeyXinfo.macroHotKey & flag) != 0;
                 
                 // 绘制黄色小点（连发）
@@ -290,14 +294,21 @@ tsl::elm::Element* MainMenu::createUI()
                     s32 dotY = posY - buttonSize + 3;  // 往上移动 2（+5 → +3）
                     renderer->drawCircle(dotX, dotY, 3, true, renderer->a(yellowColor));
                 }
+
+                // 停止键与连发键互斥，共用第一个功能点位置。
+                if (hasStop) {
+                    s32 dotX = posX + buttonSize - 3;
+                    s32 dotY = posY - buttonSize + 3;
+                    renderer->drawCircle(dotX, dotY, 3, true, renderer->a(purpleColor));
+                }
                 
                 // 绘制红色小点（宏）
-                if (hasMacro && !hasTurbo) {
+                if (hasMacro && !hasTurbo && !hasStop) {
                     s32 macroX, macroY;
                     macroX = posX + buttonSize - 3;
                     macroY = posY - buttonSize + 3;
                     renderer->drawCircle(macroX, macroY, 3, true, renderer->a(redColor));
-                } else if (hasMacro && hasTurbo) {    // 重合：红点右移8px，避免重叠
+                } else if (hasMacro && (hasTurbo || hasStop)) { // 重合：红点右移8px，避免重叠
                     s32 macroX, macroY;
                     macroX = posX + buttonSize - 3 + 8;
                     macroY = posY - buttonSize + 3;

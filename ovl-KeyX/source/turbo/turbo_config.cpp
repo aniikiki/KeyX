@@ -11,6 +11,10 @@ namespace {
     constexpr int DELAY_START_STEP_MS = 10;
     constexpr int DELAY_START_STEPS =
         (DELAY_START_MAX_MS - DELAY_START_MIN_MS) / DELAY_START_STEP_MS + 1;
+    constexpr int TURBO_FREQUENCY_MIN = 1;
+    constexpr int TURBO_FREQUENCY_MAX = 10;
+    constexpr int TURBO_FREQUENCY_STEPS =
+        TURBO_FREQUENCY_MAX - TURBO_FREQUENCY_MIN + 1;
 
     u64 s_HoldTurboButtons = 0;
     u64 s_ToggleTurboButtons = 0;
@@ -54,17 +58,21 @@ namespace {
         IniHelper::setString("AUTOFIRE", "stopbutton", std::to_string(s_StopTurboButton), configPath);
     }
     
-    struct SpeedConfig {
-        const char* name;
-        int press;
-        int release;
-        tsl::Color color;
-    };
-    constexpr SpeedConfig SPEED_CONFIGS[] = {
-        {"极速", 50, 50, {0xF, 0x5, 0x5, 0xF}},       // 红色
-        {"高速", 100, 100, {0x00, 0xDD, 0xFF, 0xFF}}, // 蓝色
-        {"普通", 200, 50, {0x00, 0xFF, 0xDD, 0xFF}},  // 标准颜色(00FFDD)
-    };
+    int FrequencyFromDurations(int pressMs, int releaseMs) {
+        int cycleMs = pressMs + releaseMs;
+        if (cycleMs <= 0) return TURBO_FREQUENCY_MAX;
+
+        int frequency = (1000 + cycleMs / 2) / cycleMs;
+        if (frequency < TURBO_FREQUENCY_MIN) return TURBO_FREQUENCY_MIN;
+        if (frequency > TURBO_FREQUENCY_MAX) return TURBO_FREQUENCY_MAX;
+        return frequency;
+    }
+
+    void DurationsFromFrequency(int frequency, int& pressMs, int& releaseMs) {
+        int cycleMs = (1000 + frequency / 2) / frequency;
+        pressMs = (cycleMs + 1) / 2;
+        releaseMs = cycleMs - pressMs;
+    }
 }
 
 SettingTurboConfig::SettingTurboConfig(bool isGlobal, u64 currentTitleId)  
@@ -81,11 +89,10 @@ SettingTurboConfig::SettingTurboConfig(bool isGlobal, u64 currentTitleId)
         snprintf(m_ConfigPath, sizeof(m_ConfigPath), "/config/KeyX/config.ini");
     }
 
-    // 读取速度配置（0=极速, 1=高速, 2=普通）
+    // 从现有按下/松开时间换算频率，兼容旧版三档配置。
     int press = IniHelper::getInt("AUTOFIRE", "presstime", 50, m_ConfigPath);
-    if (press == 50) m_TurboSpeed = 0;
-    else if (press == 100) m_TurboSpeed = 1;
-    else m_TurboSpeed = 2;
+    int release = IniHelper::getInt("AUTOFIRE", "fireinterval", 50, m_ConfigPath);
+    m_TurboFrequency = FrequencyFromDurations(press, release);
     // 读取防止误触配置（0=关闭，1=开启）
     m_DelayStart = IniHelper::getInt("AUTOFIRE", "delaystart", 1, m_ConfigPath);
     m_DelayStartMs = IniHelper::getInt("AUTOFIRE", "delaystartms", 200, m_ConfigPath);
@@ -123,24 +130,21 @@ tsl::elm::Element* SettingTurboConfig::createUI() {
     });
     list->addItem(listItemTurboKey);
 
-
-    auto& cfg = SPEED_CONFIGS[m_TurboSpeed];
-    auto listItemTurboSpeed = new tsl::elm::ListItem("连发速度", cfg.name);
-    listItemTurboSpeed->setValueColor(cfg.color);
-    listItemTurboSpeed->setClickListener([listItemTurboSpeed, this](u64 keys) {
-        if (keys & HidNpadButton_A) {
-            m_TurboSpeed = (m_TurboSpeed + 1) % 3;
-            auto& newCfg = SPEED_CONFIGS[m_TurboSpeed];
-            IniHelper::setInt("AUTOFIRE", "presstime", newCfg.press, m_ConfigPath);
-            IniHelper::setInt("AUTOFIRE", "fireinterval", newCfg.release, m_ConfigPath);
-            g_ipcManager.sendReloadAutoFireCommand();
-            listItemTurboSpeed->setValue(newCfg.name);
-            listItemTurboSpeed->setValueColor(newCfg.color);
-            return true;
-        }
-        return false;
+    auto listItemTurboFrequency = new tsl::elm::StepTrackBarV2(
+        "连发频率", "", TURBO_FREQUENCY_STEPS,
+        TURBO_FREQUENCY_MIN, TURBO_FREQUENCY_MAX, "次/秒");
+    listItemTurboFrequency->setSimpleCallback([this](s16 value, s16) {
+        m_TurboFrequency = value;
+        int pressMs = 0;
+        int releaseMs = 0;
+        DurationsFromFrequency(m_TurboFrequency, pressMs, releaseMs);
+        IniHelper::setInt("AUTOFIRE", "presstime", pressMs, m_ConfigPath);
+        IniHelper::setInt("AUTOFIRE", "fireinterval", releaseMs, m_ConfigPath);
+        g_ipcManager.sendReloadAutoFireCommand();
     });
-    list->addItem(listItemTurboSpeed);
+    listItemTurboFrequency->setProgress(
+        static_cast<u8>(m_TurboFrequency - TURBO_FREQUENCY_MIN));
+    list->addItem(listItemTurboFrequency);
 
     list->addItem(new tsl::elm::CategoryHeader(" 延迟启动连发功能避免误触"));
 
