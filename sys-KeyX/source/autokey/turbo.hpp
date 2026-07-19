@@ -47,6 +47,7 @@ private:
     bool m_StopButtonWasPressed;// 上一轮停止键是否按下
     bool m_NeedsInputSync;      // 恢复/重载后先同步输入，避免误触
     u64 m_ConfigPathHash;       // 当前配置标识，用于识别配置切换
+    bool m_StopInputConsumed;   // 当前停止键按压已被处理，等待真实松开
     
     // 事件判定
     FeatureEvent DetermineEvent(u64 active_buttons);

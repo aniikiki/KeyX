@@ -9,7 +9,8 @@ enum class FeatureEvent {
     Turbo_EXECUTING,    // 执行中3
     Macro_EXECUTING,    // 执行中4
     Touch_EXECUTING,    // 触摸映射执行中5
-    FINISHING     // 功能结束6
+    INPUT_EXECUTING,    // 普通按键透传中6
+    FINISHING     // 功能结束7
 };
 
 // 处理结果（连发和宏共用）

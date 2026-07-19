@@ -1,43 +1,16 @@
-/libnx-参考库
-sys-autokeyloop.log
-/build
-/out
-/pad-macro-参考连发项目
-AutoKeyLoop.log
-/sys-AutoKeyLoop/libnx-参考库
-/sys-AutoKeyLoop/pad-macro-参考连发项目
-/ovl-AutoKeyLoop/参考项目-EdiZon-Overlay
-/ovl-AutoKeyLoop/参考项目-NX-Mod-Manager
-/sys-AutoKeyLoop/AutoKeyLoop.log
-/ovl-AutoKeyLoop/build
-/sys-AutoKeyLoop/build
-/sys-AutoKeyLoop/out
-ovl-AutoKeyLoop/ovl-AutoKeyLoop.elf
-ovl-AutoKeyLoop/ovl-AutoKeyLoop.nacp
-ovl-AutoKeyLoop/ovl-AutoKeyLoop.ovl
-.build_status
-/参考项目-ovl-sysmodules
-/ovl-AutoKeyLoop/参考项目-ovl-sysmodules
-/ovl-AutoKeyLoop/参考项目-ovl-FtpAutoBack
-config.ini
-config.ini
-/sys-AutoKeyLoop/参考项目-FtpAutoBack
-/sys-AutoKeyLoop/pad-macro-参考项目
-/sys-AutoKeyLoop/有线手柄参考项目-sys-con
-/参考项目
-01002B30028F6000.ini
-/sys-AutoKeyLoop/参考项目-SaltyNX
-/sys-AutoKeyLoop/参考项目-Status-Monitor-Overlay
-/ovl-KeyX/build
-ovl-KeyX/ovl-KeyX.elf
-ovl-KeyX/ovl-KeyX.nacp
-ovl-KeyX/ovl-KeyX.ovl
-/sys-KeyX/build
-/sys-KeyX/out
-/参考项目 libnx-4.9.0
-/参考项目-Ultrahand-Overlay
-/参考库-libnx-4.9.0
-.augment/rules/rule.md
-.vscode/settings.json
-/libnx-4.9.0
-/Ultrahand-Overlay-
+# macOS
+.DS_Store
+
+# Root build outputs
+/.build_status
+/out/
+
+# Overlay build outputs
+/ovl-KeyX/build/
+/ovl-KeyX/ovl-KeyX.elf
+/ovl-KeyX/ovl-KeyX.nacp
+/ovl-KeyX/ovl-KeyX.ovl
+
+# Sysmodule build outputs
+/sys-KeyX/build/
+/sys-KeyX/out/

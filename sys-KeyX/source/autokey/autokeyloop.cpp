@@ -171,6 +171,9 @@ void AutoKeyLoop::MainLoop() {
             case FeatureEvent::Touch_EXECUTING:
                 ApplyHdlsState(result);
                 break;
+            case FeatureEvent::INPUT_EXECUTING:
+                ApplyHdlsState(result);
+                break;
             case FeatureEvent::FINISHING:
                 result.analog_stick_l = {0};
                 result.analog_stick_r = {0};

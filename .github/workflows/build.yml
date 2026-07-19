@@ -30,6 +30,15 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends python3 zip
 
+      - name: 读取版本号
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(awk '/^[[:space:]]*APP_VERSION[[:space:]]*:=/ { print $3; exit }' ovl-KeyX/Makefile)"
+          test -n "$version"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
       - name: 编译
         run: make -j2
 
@@ -37,11 +46,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          asset="out/KeyX-${{ steps.version.outputs.value }}-CN.zip"
           test -f ovl-KeyX/ovl-KeyX.ovl
           test -f sys-KeyX/out/4100000002025924/exefs.nsp
-          test -f out/KeyX-CN.zip
+          test -f "$asset"
 
-          if unzip -Z1 out/KeyX-CN.zip \
+          if unzip -Z1 "$asset" \
             | grep -Eq '0100000000251020|switch/\.overlays/lang/KeyX|update\.json'; then
             echo "安装包中发现已移除的通知、语言或更新文件"
             exit 1
@@ -50,7 +60,7 @@ jobs:
       - name: 上传简体中文版本
         uses: actions/upload-artifact@v4
         with:
-          name: KeyX-CN-${{ github.sha }}
-          path: out/KeyX-CN.zip
+          name: KeyX-${{ steps.version.outputs.value }}-CN
+          path: out/KeyX-${{ steps.version.outputs.value }}-CN.zip
           if-no-files-found: error
           retention-days: 14

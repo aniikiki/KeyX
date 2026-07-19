@@ -49,6 +49,7 @@ Turbo::Turbo(const char* config_path) {
     m_StopButtonWasPressed = false;
     m_NeedsInputSync = true;
     m_ConfigPathHash = 0;
+    m_StopInputConsumed = false;
     // 自动加载配置
     LoadConfig(config_path);
 }
@@ -83,6 +84,7 @@ void Turbo::LoadConfig(const char* config_path) {
     m_PreviousToggleButtons = 0;
     m_StopButtonWasPressed = false;
     m_NeedsInputSync = true;
+    m_StopInputConsumed = false;
     // 读取时间参数（毫秒转纳秒）
     int press_ms = ini_getl("AUTOFIRE", "presstime", 100, config_path);
     int release_ms = ini_getl("AUTOFIRE", "fireinterval", 100, config_path);
@@ -120,6 +122,7 @@ void Turbo::SynchronizeInput(u64 buttons, bool isJoyCon) {
     m_PreviousToggleButtons = buttons & toggleMask;
     m_StopButtonWasPressed = (buttons & stopMask) != 0;
     m_NeedsInputSync = false;
+    m_StopInputConsumed = false;
 }
 
 // 获取只允许左边还是右边的手柄联发
@@ -148,23 +151,42 @@ void Turbo::Process(ProcessResult& result, bool isJoyCon) {
         u64 newly_pressed = physical_toggle_buttons & ~m_PreviousToggleButtons & ~m_LatchedButtons;
         m_LatchedButtons |= newly_pressed;
         stop_pressed = stop_button_is_pressed && !m_StopButtonWasPressed;
-        if (stop_pressed) m_LatchedButtons = 0;
         m_PreviousToggleButtons = physical_toggle_buttons;
         m_StopButtonWasPressed = stop_button_is_pressed;
     }
 
-    // 按住和切换模式可以同时工作，但每个按键只属于其中一种
+    bool stop_action_started = false;
+    bool stop_cycle_finished = false;
+    bool had_latched_buttons = m_LatchedButtons != 0;
+    // 只有确实存在切换连发时才消费停止键；否则它仍是普通按键。
+    if (stop_pressed && had_latched_buttons && !m_StopInputConsumed) {
+        m_LatchedButtons = 0;
+        m_StopInputConsumed = true;
+        stop_action_started = true;
+    }
+
+    // 屏蔽这次停止按压，直到实体键或触摸真正松开。
+    if (m_StopInputConsumed && !stop_button_is_pressed) {
+        m_StopInputConsumed = false;
+        stop_cycle_finished = true;
+    }
+
+    // 按住和切换模式可以同时工作，但每个按键只属于其中一种。
     u64 hold_buttons = result.buttons & holdMask;
     u64 active_buttons = hold_buttons | m_LatchedButtons;
-    u64 normal_buttons = result.buttons & ~(holdMask | toggleMask | stopMask);
+    u64 normal_buttons = result.buttons & ~(holdMask | toggleMask);
+    if (m_StopInputConsumed || stop_cycle_finished)
+        normal_buttons &= ~stopMask;
 
-    // 没有按住连发需要继续时，停止键立即恢复正常输入状态。
-    // 若仍按着按住连发键，则保持当前连发周期，不让停止键打断它。
-    if (stop_pressed && (hold_buttons == 0 || !m_IsActive)) {
-        if (hold_buttons == 0) TurboFinishing();
+    bool force_stop_output = stop_action_started || m_StopInputConsumed || stop_cycle_finished;
+
+    // 没有按住连发需要继续时，立即结束切换连发状态。
+    if (stop_action_started && hold_buttons == 0) TurboFinishing();
+
+    // 停止键完全松开后恢复 HDLS 状态；仍按着的按住连发不受影响。
+    if (stop_cycle_finished && active_buttons == 0) {
         result.event = FeatureEvent::FINISHING;
-        // 防误触等待阶段仍保留原本的按住输入，只屏蔽停止键。
-        result.OtherButtons = normal_buttons | hold_buttons;
+        result.OtherButtons = normal_buttons;
         return;
     }
 
@@ -172,6 +194,10 @@ void Turbo::Process(ProcessResult& result, bool isJoyCon) {
     switch (result.event) {
         case FeatureEvent::IDLE:
         case FeatureEvent::PAUSED:
+            if (force_stop_output) {
+                result.event = FeatureEvent::INPUT_EXECUTING;
+                result.OtherButtons = normal_buttons | hold_buttons;
+            }
             return;
         case FeatureEvent::STARTING:
             TurboStarting();
@@ -239,6 +265,7 @@ void Turbo::ResetState() {
     m_PreviousToggleButtons = 0;
     m_StopButtonWasPressed = false;
     m_NeedsInputSync = true;
+    m_StopInputConsumed = false;
 }
 
 // 检测真松开（仅在按下周期检测，避免污染）
