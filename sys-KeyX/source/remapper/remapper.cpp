@@ -2,6 +2,7 @@
 #include <cstring>
 #include "minIni.h"
 #include "switch_model.hpp"
+#include "log.h"
 
 // 映射状态标志
 static bool s_MappingEnabled = false;
@@ -80,7 +81,11 @@ Result ButtonRemapper::ApplyMappingsToEmbedded(HidsysUniquePadId pad_id, const s
                                                const std::vector<ButtonMapping>& captureMappings) {
     HidcfgButtonConfigEmbedded config;
     Result rc = hidsysGetHidButtonConfigEmbedded(pad_id, &config);
-    if (R_FAILED(rc)) return rc;
+    if (R_FAILED(rc)) {
+        log_warning("MAPPING pad=%016lX get_embedded_rc=%08X",
+                    static_cast<unsigned long>(pad_id.id), rc);
+        return rc;
+    }
     
     for (const auto& mapping : mappings) {
         ApplyMapping(config, mapping.source, mapping.target);
@@ -94,7 +99,15 @@ Result ButtonRemapper::ApplyMappingsToEmbedded(HidsysUniquePadId pad_id, const s
         }
     }
 
-    return hidsysSetHidButtonConfigEmbedded(pad_id, &config);
+    rc = hidsysSetHidButtonConfigEmbedded(pad_id, &config);
+    if (!captureMappings.empty()) {
+        HidcfgButtonConfigEmbedded applied{};
+        const Result readRc = hidsysGetHidButtonConfigEmbedded(pad_id, &applied);
+        log_info("CAPTURE_MAP pad=%016lX set_rc=%08X read_rc=%08X requested=%u actual=%u",
+                 static_cast<unsigned long>(pad_id.id), rc, readRc,
+                 config.hardware_button_capture, applied.hardware_button_capture);
+    }
+    return rc;
 }
 
 // 应用映射到 Full 手柄
@@ -193,6 +206,9 @@ Result ButtonRemapper::SetMapping(const char* config_path) {
     std::vector<ButtonMapping> mappings;
     std::vector<ButtonMapping> captureMappings;
     LoadMappingsFromConfig(config_path, mappings, captureMappings);
+    log_info("MAPPING config=%s regular=%lu capture=%lu", config_path,
+             static_cast<unsigned long>(mappings.size()),
+             static_cast<unsigned long>(captureMappings.size()));
 
     // 如果是空的代表不需要修改配置，直接恢复
     if (mappings.empty() && captureMappings.empty()) return RestoreMapping();
@@ -201,7 +217,10 @@ Result ButtonRemapper::SetMapping(const char* config_path) {
     HidsysUniquePadId pad_ids[8];
     s32 total = 0;
     Result rc = hidsysGetUniquePadIds(pad_ids, 8, &total);
-    if (R_FAILED(rc) || total == 0) return rc;
+    if (R_FAILED(rc) || total == 0) {
+        log_warning("MAPPING enumerate rc=%08X count=%d", rc, total);
+        return rc;
+    }
     
     Result firstError = 0;
     // 遍历所有手柄
@@ -209,7 +228,15 @@ Result ButtonRemapper::SetMapping(const char* config_path) {
         // 获取手柄类型
         HidsysUniquePadType pad_type;
         rc = hidsysGetUniquePadType(pad_ids[i], &pad_type);
-        if (R_FAILED(rc)) continue;
+        if (R_FAILED(rc)) {
+            log_warning("MAPPING pad=%016lX type_rc=%08X",
+                        static_cast<unsigned long>(pad_ids[i].id), rc);
+            continue;
+        }
+        if (!captureMappings.empty()) {
+            log_info("CAPTURE_MAP pad=%016lX type=%u",
+                     static_cast<unsigned long>(pad_ids[i].id), static_cast<unsigned int>(pad_type));
+        }
         
         // 根据手柄类型应用映射
         if (pad_type == HidsysUniquePadType_Embedded ||
