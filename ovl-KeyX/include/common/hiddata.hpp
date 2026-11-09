@@ -1,6 +1,7 @@
 #pragma once
 #include <switch.h>
 #include <cstring>
+#include "switch_model.hpp"
 
 /**
  * HID 按键数据工具集
@@ -25,6 +26,8 @@ namespace ButtonIcon {
     constexpr const char* StickR = "";  // 右摇杆按下
     constexpr const char* Start  = "";  // Start/Plus
     constexpr const char* Select = "";  // Select/Minus
+    constexpr const char* Capture = "截图";
+    constexpr const char* Home = "主页";
     constexpr const char* Unknown = ""; // 未知按键
 }
 
@@ -79,7 +82,18 @@ namespace MappingDef {
     };
 
     // 支持映射的按键总数
-    constexpr int BUTTON_COUNT = 16;
+    constexpr int BUTTON_COUNT = 17;
+
+    inline int GetButtonCount() {
+        return IsSwitchLite() ? BUTTON_COUNT : BUTTON_COUNT - 1;
+    }
+
+    inline const char* GetDisplayTarget(const ButtonMapping& mapping) {
+        const bool isHome = strcmp(mapping.target, "Home") == 0;
+        if (isHome && strcmp(mapping.source, "Capture") != 0) return mapping.source;
+        if (!IsSwitchLite() && (strcmp(mapping.target, "Capture") == 0 || isHome)) return mapping.source;
+        return mapping.target;
+    }
 
 }
 
@@ -155,6 +169,8 @@ namespace HidHelper {
         if (strcmp(buttonName, "StickR") == 0) return ButtonIcon::StickR;
         if (strcmp(buttonName, "Start") == 0)  return ButtonIcon::Start;
         if (strcmp(buttonName, "Select") == 0) return ButtonIcon::Select;
+        if (strcmp(buttonName, "Capture") == 0) return ButtonIcon::Capture;
+        if (strcmp(buttonName, "Home") == 0) return ButtonIcon::Home;
         return ButtonIcon::Unknown;
     }
     

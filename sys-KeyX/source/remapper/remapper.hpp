@@ -18,7 +18,8 @@ public:
 
 private:
     // 从配置文件加载映射关系
-    static void LoadMappingsFromConfig(const char* config_path, std::vector<ButtonMapping>& out);
+    static void LoadMappingsFromConfig(const char* config_path, std::vector<ButtonMapping>& mappings,
+                                       std::vector<ButtonMapping>& captureMappings);
 
     // 查找按键枚举值（返回-1表示无效）
     static int FindButton(const char* name);
@@ -28,16 +29,17 @@ private:
     static void ApplyMapping(ConfigType& config, const char* from, const char* to);
     
     // 应用映射到 Embedded 手柄
-    static void ApplyMappingsToEmbedded(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
+    static Result ApplyMappingsToEmbedded(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings,
+                                          const std::vector<ButtonMapping>& captureMappings);
     
     // 应用映射到 Full 手柄
-    static void ApplyMappingsToFull(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
+    static Result ApplyMappingsToFull(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
     
     // 应用映射到左 JoyCon
-    static void ApplyMappingsToLeft(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
+    static Result ApplyMappingsToLeft(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
     
     // 应用映射到右 JoyCon
-    static void ApplyMappingsToRight(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
+    static Result ApplyMappingsToRight(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
     
     // 应用单个映射到左 JoyCon（只处理左侧按键）
     static void ApplyMappingLeft(HidcfgButtonConfigLeft& config, const char* from, const char* to);

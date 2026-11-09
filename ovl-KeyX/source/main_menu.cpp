@@ -35,7 +35,8 @@ static MappingDef::ButtonMapping s_buttonMappings[MappingDef::BUTTON_COUNT] = {
     {"StickL", "StickL"},
     {"StickR", "StickR"},
     {"Start", "Start"},
-    {"Select", "Select"}
+    {"Select", "Select"},
+    {"Capture", "Capture"}
 };
 
 static constexpr const char* s_switchText[] = {"已关闭", "已开启"};
@@ -89,7 +90,7 @@ void MainMenu::RefreshData() {
     m_KeyXinfo.triggerButton = std::strtoull(triggerButtonStr.c_str(), nullptr, 10);
     
     // 读取映射配置
-    for (int i = 0; i < MappingDef::BUTTON_COUNT; i++) {
+    for (int i = 0; i < MappingDef::GetButtonCount(); i++) {
         std::string temp = IniHelper::getString("MAPPING", s_buttonMappings[i].source, s_buttonMappings[i].source, ConfigPath);
         strncpy(s_buttonMappings[i].target, temp.c_str(), 7);
         s_buttonMappings[i].target[7] = '\0';
@@ -267,11 +268,11 @@ tsl::elm::Element* MainMenu::createUI()
                 const char* targetName = nullptr;
                 bool isMapped = false;
                 
-                for (int i = 0; i < MappingDef::BUTTON_COUNT; i++) {
+                for (int i = 0; i < MappingDef::GetButtonCount(); i++) {
                     if (strcmp(s_buttonMappings[i].source, sourceName) == 0) {
-                        targetIcon = HidHelper::getButtonIcon(s_buttonMappings[i].target);
-                        targetName = s_buttonMappings[i].target;
-                        isMapped = (strcmp(s_buttonMappings[i].source, s_buttonMappings[i].target) != 0);
+                        targetName = MappingDef::GetDisplayTarget(s_buttonMappings[i]);
+                        targetIcon = HidHelper::getButtonIcon(targetName);
+                        isMapped = (strcmp(sourceName, targetName) != 0);
                         break;
                     }
                 }
@@ -282,7 +283,9 @@ tsl::elm::Element* MainMenu::createUI()
                 tsl::Color color = isMapped ? blueColor : whiteColor;
                 
                 // 绘制图标
-                renderer->drawString(targetIcon, false, posX, posY, buttonSize, 
+                const bool isSystemButton = strcmp(targetName, "Capture") == 0 || strcmp(targetName, "Home") == 0;
+                const s32 iconSize = isSystemButton ? buttonSize / 2 : buttonSize;
+                renderer->drawString(targetIcon, false, posX, posY, iconSize,
                                     renderer->a(color));
                 
                 // 检查目标按键是否有连发、停止键、功能键或宏
@@ -363,6 +366,7 @@ tsl::elm::Element* MainMenu::createUI()
             s32 row6Y = baseY + 5 * (buttonSize + rowSpacing);
             drawButton("StickL", lColumnX, row6Y);
             drawButton("StickR", rColumnX, row6Y);
+            if (IsSwitchLite()) drawButton("Capture", dpadLeftX, row6Y);
 
         } else {
             // 不在游戏中，绘制相关信息（使用红色，水平和垂直居中）

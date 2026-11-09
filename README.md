@@ -80,6 +80,7 @@ Nintendo Switch 按键助手，支持连发、按键重新分配、按键宏和�
 ### 按键映射
 
 - 支持 16 个按键互相映射 (A/B/X/Y/L/R/ZL/ZR/十字键/SELECT/START/L3/R3)
+- Switch Lite 的内置截图键也可以作为映射来源和目标，并支持映射为 HOME
 - 与连发功能可同时启用，不会有冲突
 - **完美避开系统关于按键修改后的警告弹窗**
 - 全局配置和游戏独立配置
@@ -233,6 +234,7 @@ The complete plugin consists of Tesla overlay and system module.
 ### Key Mapping
 
 - Remap 16 buttons (A/B/X/Y/L/R/ZL/ZR/D-pad/SELECT/START/L3/R3)
+- The built-in Capture button on Nintendo Switch Lite can be a mapping source or target, and can be mapped to HOME
 - Works together with turbo without conflicts
 - **Perfectly avoids system warning popups about button changes**
 - Global and per-game configuration

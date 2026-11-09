@@ -29,6 +29,7 @@ SOURCES		:=	source \
 				lib/minIni-nx/source
 DATA		:=	data
 INCLUDES	:=	include \
+				../common \
 				source/autokey \
 				source/remapper \
 				source/util \

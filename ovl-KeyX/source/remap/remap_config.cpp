@@ -24,7 +24,8 @@ namespace {
         {"StickL", "StickL"},
         {"StickR", "StickR"},
         {"Start", "Start"},
-        {"Select", "Select"}
+        {"Select", "Select"},
+        {"Capture", "Capture"}
     };
     
     // 当前配置上下文（全局变量）
@@ -55,7 +56,7 @@ SettingRemapConfig::SettingRemapConfig(bool isGlobal, u64 currentTitleId)
 }
 
 void SettingRemapConfig::loadMappings() {
-    for (int i = 0; i < MappingDef::BUTTON_COUNT; i++) {
+    for (int i = 0; i < MappingDef::GetButtonCount(); i++) {
         std::string temp = IniHelper::getString(
             "MAPPING",
             s_ButtonMappings[i].source,
@@ -92,12 +93,13 @@ tsl::elm::Element* SettingRemapConfig::createUI() {
 
     // 遍历所有映射，创建列表项
     m_listItems.clear();
-    for (int i = 0; i < MappingDef::BUTTON_COUNT; i++) {
+    for (int i = 0; i < MappingDef::GetButtonCount(); i++) {
         const char* sourceIcon = HidHelper::getButtonIcon(s_ButtonMappings[i].source);
-        const char* targetIcon = HidHelper::getButtonIcon(s_ButtonMappings[i].target);
+        const char* targetName = MappingDef::GetDisplayTarget(s_ButtonMappings[i]);
+        const char* targetIcon = HidHelper::getButtonIcon(targetName);
         
         // 判断是否映射
-        bool isMapped = (strcmp(s_ButtonMappings[i].source, s_ButtonMappings[i].target) != 0);
+        bool isMapped = (strcmp(s_ButtonMappings[i].source, targetName) != 0);
         
         // 设置右侧文本颜色
         tsl::Color valueColor = isMapped 
@@ -142,8 +144,9 @@ bool SettingRemapConfig::handleInput(u64 keysDown, u64 keysHeld, const HidTouchS
 void SettingRemapConfig::refreshList() {
     loadMappings();
     for (size_t i = 0; i < m_listItems.size(); i++) {
-        const char* targetIcon = HidHelper::getButtonIcon(s_ButtonMappings[i].target);
-        bool isMapped = (strcmp(s_ButtonMappings[i].source, s_ButtonMappings[i].target) != 0);
+        const char* targetName = MappingDef::GetDisplayTarget(s_ButtonMappings[i]);
+        const char* targetIcon = HidHelper::getButtonIcon(targetName);
+        bool isMapped = (strcmp(s_ButtonMappings[i].source, targetName) != 0);
         tsl::Color valueColor = isMapped ? tsl::Color{0x00, 0xDD, 0xFF, 0xFF} : tsl::style::color::ColorText;
         m_listItems[i]->setValue(std::string("按键  ") + targetIcon);
         m_listItems[i]->setValueColor(valueColor);
@@ -195,20 +198,16 @@ tsl::elm::Element* SettingRemapDisplay::createUI() {
         // 辅助函数：绘制按键（根据映射关系选择颜色）
         auto drawButton = [&](const char* sourceName, s32 posX, s32 posY) {
             // 查找映射
-            const char* targetIcon = nullptr;
-            bool isMapped = false;
-            
-            for (int i = 0; i < MappingDef::BUTTON_COUNT; i++) {
+            for (int i = 0; i < MappingDef::GetButtonCount(); i++) {
                 if (strcmp(s_ButtonMappings[i].source, sourceName) == 0) {
-                    targetIcon = HidHelper::getButtonIcon(s_ButtonMappings[i].target);
-                    isMapped = (strcmp(s_ButtonMappings[i].source, s_ButtonMappings[i].target) != 0);
-                    break;
+                    const char* targetName = MappingDef::GetDisplayTarget(s_ButtonMappings[i]);
+                    const char* targetIcon = HidHelper::getButtonIcon(targetName);
+                    const auto color = strcmp(sourceName, targetName) != 0 ? blueColor : whiteColor;
+                    const bool isSystemButton = strcmp(targetName, "Capture") == 0 || strcmp(targetName, "Home") == 0;
+                    const s32 iconSize = isSystemButton ? buttonSize / 2 : buttonSize;
+                    r->drawString(targetIcon, false, posX, posY, iconSize, a(color));
+                    return;
                 }
-            }
-            
-            if (targetIcon) {
-                tsl::Color color = isMapped ? blueColor : whiteColor;
-                r->drawString(targetIcon, false, posX, posY, buttonSize, a(color));
             }
         };
         
@@ -249,6 +248,7 @@ tsl::elm::Element* SettingRemapDisplay::createUI() {
         s32 row6Y = baseY + 5 * (buttonSize + rowSpacing);
         drawButton("StickL", lColumnX, row6Y);
         drawButton("StickR", rColumnX, row6Y);
+        if (IsSwitchLite()) drawButton("Capture", dpadLeftX, row6Y);
     });
     
     list->addItem(buttonDisplay, buttonDisplayHeight);
@@ -272,7 +272,7 @@ bool SettingRemapDisplay::handleInput(u64 keysDown, u64 keysHeld, const HidTouch
         // 重置映射
         resetMappings();
         g_ipcManager.sendReloadMappingCommand();
-        Refresh::RefrRequest(Refresh::RemapConfig);
+        Refresh::RefrSetMultiple(Refresh::RemapConfig | Refresh::MainMenu);
         tsl::goBack();
         return true;
     }
@@ -282,7 +282,7 @@ bool SettingRemapDisplay::handleInput(u64 keysDown, u64 keysHeld, const HidTouch
 
 void SettingRemapDisplay::resetMappings() {
     // 保存到配置文件（写入默认值）
-    for (int i = 0; i < MappingDef::BUTTON_COUNT; i++) {
+    for (int i = 0; i < MappingDef::GetButtonCount(); i++) {
         IniHelper::setString("MAPPING", 
             s_ButtonMappings[i].source, 
             s_ButtonMappings[i].source,
@@ -311,13 +311,17 @@ tsl::elm::Element* SettingRemapEdit::createUI() {
     auto header = new tsl::elm::CategoryHeader("目标按键");
     list->addItem(header);
     
-    // 显示所有 16 个可选按键
-    for (int i = 0; i < MappingDef::BUTTON_COUNT; i++) {
-        const char* targetName = s_ButtonMappings[i].source;  // 使用源按键名作为目标选项
+    // 来源和目标共用按键列表
+    const char* currentTarget = MappingDef::GetDisplayTarget(s_ButtonMappings[m_buttonIndex]);
+    const int buttonCount = MappingDef::GetButtonCount();
+    const bool allowHome = IsSwitchLite() && strcmp(sourceName, "Capture") == 0;
+    for (int i = 0; i < buttonCount + allowHome; i++) {
+        // 截图键额外提供 HOME 目标，其他选项继续复用来源列表。
+        const char* targetName = i < buttonCount ? s_ButtonMappings[i].source : "Home";
         const char* targetIcon = HidHelper::getButtonIcon(targetName);
         
         // 判断是否是当前映射
-        bool isCurrent = (strcmp(s_ButtonMappings[m_buttonIndex].target, targetName) == 0);
+        bool isCurrent = (strcmp(currentTarget, targetName) == 0);
         
         auto item = new tsl::elm::ListItem(
             isCurrent ? "当前" : "",
@@ -332,7 +336,7 @@ tsl::elm::Element* SettingRemapEdit::createUI() {
                     targetName, 
                     s_configPath);
                 g_ipcManager.sendReloadMappingCommand();
-                Refresh::RefrRequest(Refresh::RemapConfig);
+                Refresh::RefrSetMultiple(Refresh::RemapConfig | Refresh::MainMenu);
                 tsl::goBack();
                 return true;
             }

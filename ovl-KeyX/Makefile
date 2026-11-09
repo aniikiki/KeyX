@@ -22,7 +22,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 # 按键助手 (12 bytes)
 
 APP_TITLE	:=	KeyX        
-APP_VERSION :=	2.2.3
+APP_VERSION :=	2.3.0
 
 TARGET		:=	ovl-KeyX
 BUILD		:=	build
@@ -39,6 +39,7 @@ SOURCES		:=	source \
 				libs/libultrahand/common
 DATA		:=	data
 INCLUDES	:=	include \
+				../common \
 				include/about \
 				include/turbo \
 				include/remap \
