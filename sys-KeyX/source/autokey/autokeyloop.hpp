@@ -24,8 +24,8 @@ public:
     // 更新触摸映射功能
     void UpdateTouchFeature(bool enable, const char* config_path);
     
-    // 更新按键映射（用于动态重载配置）
-    void UpdateButtonMappings(const char* config_path);
+    // 读取系统与 KeyX 合并后实际生效的按键映射
+    void UpdateButtonMappings();
     
     // 控制接口
     void Pause();
@@ -77,12 +77,6 @@ private:
     
     
     
-    // 逆映射表（用于解决 HDLS 注入污染问题）
-    static constexpr int MAX_MAPPINGS = 16;  // 最多16个按键映射
-    u64 m_TargetMasks[MAX_MAPPINGS];         // 目标按键掩码（读到的）
-    u64 m_SourceMasks[MAX_MAPPINGS];         // 源按键掩码（要注入的）
-    int m_MappingCount;                       // 有效映射数量
-    
     // 内部方法
     static void ThreadFunc(void* arg);
     
@@ -105,8 +99,4 @@ private:
     void InjectJoyCon(ProcessResult& result);
     void InjectAll(ProcessResult& result);
 
-    // 逆映射相关辅助方法
-    void ApplyReverseMapping(u64& buttons) const;
-    void ApplyForwardMapping(u64& buttons) const;
-    u64 ButtonNameToMask(const char* name) const;
 };

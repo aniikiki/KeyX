@@ -29,6 +29,8 @@ App::App() {
 }
 
 App::~App() {
+    if (autokey_loop) StopAutoKey();
+    ButtonRemapper::RestoreMapping();
 }
 
 // 初始化IPC服务
@@ -108,6 +110,7 @@ bool App::InitializeIPC() {
     ipc_server->SetReloadBasicCallback([this]() {
         LoadGameConfig(m_CurrentTid);
         if (m_GameInFocus && !m_OverlayOpen && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
+        else ButtonRemapper::RestoreMapping();
         if (m_GameInFocus && !m_OverlayOpen && HasAutoKeyFeature() && !autokey_loop) StartAutoKey();
         UpdateTurboConfig();
         UpdateMacroConfig();
@@ -204,6 +207,7 @@ void App::OnGameLaunched(u64 tid) {
     LoadGameConfig(tid);
     if (!m_OverlayOpen && HasAutoKeyFeature()) StartAutoKey();
     if (!m_OverlayOpen && m_CurrentAutoRemapEnable) ButtonRemapper::SetMapping(m_ConfigPath);
+    else ButtonRemapper::RestoreMapping();
 }
 
 // 处理游戏运行事件
@@ -232,6 +236,7 @@ void App::OnGameRunning(u64 tid) {
 void App::OnGameExited() {
     m_GameInFocus = false;
     if (autokey_loop) StopAutoKey();
+    ButtonRemapper::RestoreMapping();
     m_CurrentTid = 0;
 }
 
@@ -325,6 +330,6 @@ void App::UpdateTouchConfig() {
 void App::UpdateButtonMappingConfig() {
     std::lock_guard<std::mutex> lock(autokey_mutex);
     if (autokey_loop) {
-        autokey_loop->UpdateButtonMappings(m_ConfigPath);
+        autokey_loop->UpdateButtonMappings();
     }
 }

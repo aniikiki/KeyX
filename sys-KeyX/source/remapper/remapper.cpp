@@ -1,231 +1,311 @@
 #include "remapper.hpp"
-#include <cstring>
 #include "minIni.h"
+#include <algorithm>
+#include <array>
+#include <cstring>
+#include <mutex>
+#include <vector>
 
-// 映射状态标志
-static bool s_MappingEnabled = false;
+namespace {
+    template<typename Config>
+    struct ButtonBinding {
+        const char* name;
+        HidcfgDigitalButtonAssignment assignment;
+        u64 mask;
+        u32 Config::* field;
+    };
 
-// 按键名称表（用于配置读取）
-static constexpr const char* BUTTON_NAMES[] = {
-    "A", "B", "X", "Y",
-    "Up", "Down", "Left", "Right",
-    "L", "R", "ZL", "ZR",
-    "StickL", "StickR", "Start", "Select"
-};
-
-// 按键信息（通用）
-struct ButtonInfo {
-    const char* name;
-    HidcfgDigitalButtonAssignment value;
-};
-
-// 统一的按键表
-static constexpr ButtonInfo BUTTONS[] = {
-    {"A",      HidcfgDigitalButtonAssignment_A},
-    {"B",      HidcfgDigitalButtonAssignment_B},
-    {"X",      HidcfgDigitalButtonAssignment_X},
-    {"Y",      HidcfgDigitalButtonAssignment_Y},
-    {"StickL", HidcfgDigitalButtonAssignment_StickL},
-    {"StickR", HidcfgDigitalButtonAssignment_StickR},
-    {"L",      HidcfgDigitalButtonAssignment_L},
-    {"R",      HidcfgDigitalButtonAssignment_R},
-    {"ZL",     HidcfgDigitalButtonAssignment_ZL},
-    {"ZR",     HidcfgDigitalButtonAssignment_ZR},
-    {"Select", HidcfgDigitalButtonAssignment_Select},
-    {"Start",  HidcfgDigitalButtonAssignment_Start},
-    {"Left",   HidcfgDigitalButtonAssignment_Left},
-    {"Up",     HidcfgDigitalButtonAssignment_Up},
-    {"Right",  HidcfgDigitalButtonAssignment_Right},
-    {"Down",   HidcfgDigitalButtonAssignment_Down},
-};
-
-// 查找按键（返回-1表示无效）
-int ButtonRemapper::FindButton(const char* name) {
-    for (const auto& btn : BUTTONS) {
-        if (strcmp(btn.name, name) == 0) return btn.value;
+    template<typename Config>
+    constexpr auto FullButtonBindings() {
+        return std::array<ButtonBinding<Config>, 16>{{
+            {"A", HidcfgDigitalButtonAssignment_A, HidNpadButton_A, &Config::hardware_button_a},
+            {"B", HidcfgDigitalButtonAssignment_B, HidNpadButton_B, &Config::hardware_button_b},
+            {"X", HidcfgDigitalButtonAssignment_X, HidNpadButton_X, &Config::hardware_button_x},
+            {"Y", HidcfgDigitalButtonAssignment_Y, HidNpadButton_Y, &Config::hardware_button_y},
+            {"Up", HidcfgDigitalButtonAssignment_Up, HidNpadButton_Up, &Config::hardware_button_up},
+            {"Down", HidcfgDigitalButtonAssignment_Down, HidNpadButton_Down, &Config::hardware_button_down},
+            {"Left", HidcfgDigitalButtonAssignment_Left, HidNpadButton_Left, &Config::hardware_button_left},
+            {"Right", HidcfgDigitalButtonAssignment_Right, HidNpadButton_Right, &Config::hardware_button_right},
+            {"L", HidcfgDigitalButtonAssignment_L, HidNpadButton_L, &Config::hardware_button_l},
+            {"R", HidcfgDigitalButtonAssignment_R, HidNpadButton_R, &Config::hardware_button_r},
+            {"ZL", HidcfgDigitalButtonAssignment_ZL, HidNpadButton_ZL, &Config::hardware_button_zl},
+            {"ZR", HidcfgDigitalButtonAssignment_ZR, HidNpadButton_ZR, &Config::hardware_button_zr},
+            {"StickL", HidcfgDigitalButtonAssignment_StickL, HidNpadButton_StickL, &Config::hardware_button_stick_l},
+            {"StickR", HidcfgDigitalButtonAssignment_StickR, HidNpadButton_StickR, &Config::hardware_button_stick_r},
+            {"Start", HidcfgDigitalButtonAssignment_Start, HidNpadButton_Plus, &Config::hardware_button_start},
+            {"Select", HidcfgDigitalButtonAssignment_Select, HidNpadButton_Minus, &Config::hardware_button_select}
+        }};
     }
-    return -1; // 无效按键
-}
 
-// 应用映射（通用）
-template<typename ConfigType>
-void ButtonRemapper::ApplyMapping(ConfigType& config, const char* from, const char* to) {
-    int to_value = FindButton(to);
-    if (to_value == -1) return; // 无效的目标按键，跳过
-    
-    // 检查源按键是否有效，并应用映射
-    if (strcmp(from, "A") == 0) config.hardware_button_a = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "B") == 0) config.hardware_button_b = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "X") == 0) config.hardware_button_x = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Y") == 0) config.hardware_button_y = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "StickL") == 0) config.hardware_button_stick_l = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "StickR") == 0) config.hardware_button_stick_r = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "L") == 0) config.hardware_button_l = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "R") == 0) config.hardware_button_r = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "ZL") == 0) config.hardware_button_zl = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "ZR") == 0) config.hardware_button_zr = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Select") == 0) config.hardware_button_select = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Start") == 0) config.hardware_button_start = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Left") == 0) config.hardware_button_left = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Up") == 0) config.hardware_button_up = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Right") == 0) config.hardware_button_right = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Down") == 0) config.hardware_button_down = (HidcfgDigitalButtonAssignment)to_value;
-}
+    constexpr auto EMBEDDED_BUTTONS = FullButtonBindings<HidcfgButtonConfigEmbedded>();
+    constexpr auto FULL_BUTTONS = FullButtonBindings<HidcfgButtonConfigFull>();
+    constexpr std::array<ButtonBinding<HidcfgButtonConfigLeft>, 8> LEFT_BUTTONS{{
+        {"Up", HidcfgDigitalButtonAssignment_Up, HidNpadButton_Up, &HidcfgButtonConfigLeft::hardware_button_up},
+        {"Down", HidcfgDigitalButtonAssignment_Down, HidNpadButton_Down, &HidcfgButtonConfigLeft::hardware_button_down},
+        {"Left", HidcfgDigitalButtonAssignment_Left, HidNpadButton_Left, &HidcfgButtonConfigLeft::hardware_button_left},
+        {"Right", HidcfgDigitalButtonAssignment_Right, HidNpadButton_Right, &HidcfgButtonConfigLeft::hardware_button_right},
+        {"L", HidcfgDigitalButtonAssignment_L, HidNpadButton_L, &HidcfgButtonConfigLeft::hardware_button_l},
+        {"ZL", HidcfgDigitalButtonAssignment_ZL, HidNpadButton_ZL, &HidcfgButtonConfigLeft::hardware_button_zl},
+        {"StickL", HidcfgDigitalButtonAssignment_StickL, HidNpadButton_StickL, &HidcfgButtonConfigLeft::hardware_button_stick_l},
+        {"Select", HidcfgDigitalButtonAssignment_Select, HidNpadButton_Minus, &HidcfgButtonConfigLeft::hardware_button_select}
+    }};
+    constexpr std::array<ButtonBinding<HidcfgButtonConfigRight>, 8> RIGHT_BUTTONS{{
+        {"A", HidcfgDigitalButtonAssignment_A, HidNpadButton_A, &HidcfgButtonConfigRight::hardware_button_a},
+        {"B", HidcfgDigitalButtonAssignment_B, HidNpadButton_B, &HidcfgButtonConfigRight::hardware_button_b},
+        {"X", HidcfgDigitalButtonAssignment_X, HidNpadButton_X, &HidcfgButtonConfigRight::hardware_button_x},
+        {"Y", HidcfgDigitalButtonAssignment_Y, HidNpadButton_Y, &HidcfgButtonConfigRight::hardware_button_y},
+        {"R", HidcfgDigitalButtonAssignment_R, HidNpadButton_R, &HidcfgButtonConfigRight::hardware_button_r},
+        {"ZR", HidcfgDigitalButtonAssignment_ZR, HidNpadButton_ZR, &HidcfgButtonConfigRight::hardware_button_zr},
+        {"StickR", HidcfgDigitalButtonAssignment_StickR, HidNpadButton_StickR, &HidcfgButtonConfigRight::hardware_button_stick_r},
+        {"Start", HidcfgDigitalButtonAssignment_Start, HidNpadButton_Plus, &HidcfgButtonConfigRight::hardware_button_start}
+    }};
 
-// 应用映射到 Embedded 手柄
-void ButtonRemapper::ApplyMappingsToEmbedded(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings) {
-    HidcfgButtonConfigEmbedded config;
-    Result rc = hidsysGetHidButtonConfigEmbedded(pad_id, &config);
-    if (R_FAILED(rc)) return;
-    
-    for (const auto& mapping : mappings) {
-        ApplyMapping(config, mapping.source, mapping.target);
+    struct ButtonRule {
+        HidcfgDigitalButtonAssignment source;
+        HidcfgDigitalButtonAssignment target;
+    };
+
+    template<typename Config>
+    struct SavedConfig {
+        HidsysUniquePadId pad_id;
+        Config original;
+        Config applied;
+    };
+
+    struct ReverseMapping {
+        u64 target = 0;
+        u64 source = 0;
+    };
+
+    std::mutex s_MappingMutex;
+    std::vector<SavedConfig<HidcfgButtonConfigEmbedded>> s_EmbeddedConfigs;
+    std::vector<SavedConfig<HidcfgButtonConfigFull>> s_FullConfigs;
+    std::vector<SavedConfig<HidcfgButtonConfigLeft>> s_LeftConfigs;
+    std::vector<SavedConfig<HidcfgButtonConfigRight>> s_RightConfigs;
+    std::array<ReverseMapping, 16> s_ReverseMappings{};
+
+    std::vector<ButtonRule> LoadMappings(const char* config_path) {
+        std::vector<ButtonRule> rules;
+        for (const auto& source : EMBEDDED_BUTTONS) {
+            char target[8];
+            ini_gets("MAPPING", source.name, source.name, target, sizeof(target), config_path);
+            for (const auto& destination : EMBEDDED_BUTTONS) {
+                if (strcmp(target, destination.name) == 0 && source.assignment != destination.assignment) {
+                    rules.push_back({source.assignment, destination.assignment});
+                    break;
+                }
+            }
+        }
+        return rules;
     }
-    
-    hidsysSetHidButtonConfigEmbedded(pad_id, &config);
-}
 
-// 应用映射到 Full 手柄
-void ButtonRemapper::ApplyMappingsToFull(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings) {
-    HidcfgButtonConfigFull config;
-    Result rc = hidsysGetHidButtonConfigFull(pad_id, &config);
-    if (R_FAILED(rc)) return;
-    
-    for (const auto& mapping : mappings) {
-        ApplyMapping(config, mapping.source, mapping.target);
+    template<typename Config, size_t Count>
+    void UndoKeyXFields(Config& current, const SavedConfig<Config>& saved,
+                       const std::array<ButtonBinding<Config>, Count>& bindings) {
+        for (const auto& button : bindings) {
+            if (saved.original.*button.field != saved.applied.*button.field &&
+                current.*button.field == saved.applied.*button.field) {
+                current.*button.field = saved.original.*button.field;
+            }
+        }
     }
-    
-    hidsysSetHidButtonConfigFull(pad_id, &config);
-}
 
-// 应用单个映射到左 JoyCon（只处理左侧按键）
-void ButtonRemapper::ApplyMappingLeft(HidcfgButtonConfigLeft& config, const char* from, const char* to) {
-    int to_value = FindButton(to);
-    if (to_value == -1) return;
-    
-    // 只处理左 JoyCon 拥有的按键
-    if (strcmp(from, "Left") == 0) config.hardware_button_left = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Up") == 0) config.hardware_button_up = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Right") == 0) config.hardware_button_right = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Down") == 0) config.hardware_button_down = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "StickL") == 0) config.hardware_button_stick_l = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "L") == 0) config.hardware_button_l = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "ZL") == 0) config.hardware_button_zl = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Select") == 0) config.hardware_button_select = (HidcfgDigitalButtonAssignment)to_value;
-    // 忽略右侧按键（A/B/X/Y/R/ZR/StickR/Start 等）
-}
+    template<typename Config, size_t Count>
+    Result ApplyMappings(HidsysUniquePadId pad_id, const std::vector<ButtonRule>& rules,
+                         std::vector<SavedConfig<Config>>& saved_configs,
+                         const std::array<ButtonBinding<Config>, Count>& bindings,
+                         Result (*get_config)(HidsysUniquePadId, Config*),
+                         Result (*set_config)(HidsysUniquePadId, const Config*)) {
+        Config current{};
+        Result rc = get_config(pad_id, &current);
+        if (R_FAILED(rc)) return rc;
 
-// 应用映射到左 JoyCon
-void ButtonRemapper::ApplyMappingsToLeft(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings) {
-    HidcfgButtonConfigLeft config;
-    Result rc = hidsysGetHidButtonConfigLeft(pad_id, &config);
-    if (R_FAILED(rc)) return;
-    
-    for (const auto& mapping : mappings) {
-        ApplyMappingLeft(config, mapping.source, mapping.target);
+        auto saved = std::find_if(saved_configs.begin(), saved_configs.end(), [pad_id](const auto& entry) {
+            return entry.pad_id.id == pad_id.id;
+        });
+        Config original = current;
+        if (saved != saved_configs.end()) UndoKeyXFields(original, *saved, bindings);
+
+        Config applied = original;
+        for (const auto& button : bindings) {
+            // 系统已重映射的实体按键保持原样。
+            if (original.*button.field != button.assignment) continue;
+            for (const auto& rule : rules) {
+                if (rule.source == button.assignment) {
+                    applied.*button.field = rule.target;
+                    break;
+                }
+            }
+        }
+
+        if (memcmp(&current, &applied, sizeof(Config)) != 0) {
+            rc = set_config(pad_id, &applied);
+            if (R_FAILED(rc)) return rc;
+        }
+
+        if (memcmp(&original, &applied, sizeof(Config)) == 0) {
+            if (saved != saved_configs.end()) saved_configs.erase(saved);
+        } else if (saved == saved_configs.end()) {
+            saved_configs.push_back({pad_id, original, applied});
+        } else {
+            saved->original = original;
+            saved->applied = applied;
+        }
+        return 0;
     }
-    
-    hidsysSetHidButtonConfigLeft(pad_id, &config);
-}
 
-// 应用单个映射到右 JoyCon（只处理右侧按键）
-void ButtonRemapper::ApplyMappingRight(HidcfgButtonConfigRight& config, const char* from, const char* to) {
-    int to_value = FindButton(to);
-    if (to_value == -1) return;
-    
-    // 只处理右 JoyCon 拥有的按键
-    if (strcmp(from, "A") == 0) config.hardware_button_a = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "B") == 0) config.hardware_button_b = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "X") == 0) config.hardware_button_x = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Y") == 0) config.hardware_button_y = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "StickR") == 0) config.hardware_button_stick_r = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "R") == 0) config.hardware_button_r = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "ZR") == 0) config.hardware_button_zr = (HidcfgDigitalButtonAssignment)to_value;
-    else if (strcmp(from, "Start") == 0) config.hardware_button_start = (HidcfgDigitalButtonAssignment)to_value;
-    // 忽略左侧按键（十字键/L/ZL/StickL/Select 等）
-}
-
-// 应用映射到右 JoyCon
-void ButtonRemapper::ApplyMappingsToRight(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings) {
-    HidcfgButtonConfigRight config;
-    Result rc = hidsysGetHidButtonConfigRight(pad_id, &config);
-    if (R_FAILED(rc)) return;
-    
-    for (const auto& mapping : mappings) {
-        ApplyMappingRight(config, mapping.source, mapping.target);
+    template<typename Config, size_t Count>
+    Result RestoreConfigs(std::vector<SavedConfig<Config>>& saved_configs,
+                          const std::array<ButtonBinding<Config>, Count>& bindings,
+                          Result (*get_config)(HidsysUniquePadId, Config*),
+                          Result (*set_config)(HidsysUniquePadId, const Config*)) {
+        Result first_error = 0;
+        for (auto saved = saved_configs.begin(); saved != saved_configs.end();) {
+            Config current{};
+            Result rc = get_config(saved->pad_id, &current);
+            if (R_SUCCEEDED(rc)) {
+                Config restored = current;
+                UndoKeyXFields(restored, *saved, bindings);
+                if (memcmp(&current, &restored, sizeof(Config)) != 0) {
+                    rc = set_config(saved->pad_id, &restored);
+                }
+            }
+            if (R_SUCCEEDED(rc)) {
+                saved = saved_configs.erase(saved);
+            } else {
+                // 保留失败项，下次暂停、退出或重新应用时继续恢复。
+                if (R_SUCCEEDED(first_error)) first_error = rc;
+                ++saved;
+            }
+        }
+        return first_error;
     }
-    
-    hidsysSetHidButtonConfigRight(pad_id, &config);
-}
 
-// 从配置文件加载映射关系
-void ButtonRemapper::LoadMappingsFromConfig(const char* config_path, std::vector<ButtonMapping>& out) {
-    out.clear();
-    for (int i = 0; i < 16; i++) {
-        ButtonMapping mapping;
-        mapping.source = BUTTON_NAMES[i];
-        ini_gets("MAPPING", BUTTON_NAMES[i], BUTTON_NAMES[i], mapping.target, sizeof(mapping.target), config_path);
-        // 跳过A=A这种无效映射
-        if (strcmp(mapping.source, mapping.target) != 0) out.push_back(mapping);
+    void BuildReverseMapping(const HidcfgButtonConfigEmbedded& config) {
+        s_ReverseMappings = {};
+        for (size_t i = 0; i < EMBEDDED_BUTTONS.size(); ++i) {
+            const auto& target = EMBEDDED_BUTTONS[i];
+            u64 source = 0;
+            for (const auto& candidate : EMBEDDED_BUTTONS) {
+                if (config.*candidate.field == target.assignment &&
+                    (source == 0 || candidate.mask == target.mask)) {
+                    source = candidate.mask;
+                }
+            }
+            if (source == 0 && config.hardware_button_capture == target.assignment) {
+                source = HiddbgNpadButton_Capture;
+            }
+            if (source != 0 && source != target.mask) {
+                s_ReverseMappings[i] = {target.mask, source};
+            }
+        }
+    }
+
+    Result RefreshReverseMappingLocked() {
+        s_ReverseMappings = {};
+        HidsysUniquePadId pad_ids[8];
+        s32 total = 0;
+        Result rc = hidsysGetUniquePadIds(pad_ids, 8, &total);
+        if (R_FAILED(rc)) return rc;
+
+        HidcfgButtonConfigEmbedded config{};
+        bool have_embedded = false;
+        Result first_error = 0;
+        for (s32 i = 0; i < total; ++i) {
+            HidsysUniquePadType type;
+            rc = hidsysGetUniquePadType(pad_ids[i], &type);
+            if (R_SUCCEEDED(rc) &&
+                (type == HidsysUniquePadType_DebugPadController ||
+                 (type == HidsysUniquePadType_Embedded && !have_embedded))) {
+                HidcfgButtonConfigEmbedded candidate{};
+                rc = hidsysGetHidButtonConfigEmbedded(pad_ids[i], &candidate);
+                if (R_SUCCEEDED(rc)) {
+                    config = candidate;
+                    have_embedded = true;
+                    if (type == HidsysUniquePadType_DebugPadController) break;
+                }
+            }
+            if (R_FAILED(rc) && R_SUCCEEDED(first_error)) first_error = rc;
+        }
+        if (have_embedded) BuildReverseMapping(config);
+        return first_error;
+    }
+
+    Result RestoreMappingsLocked() {
+        const Result results[] = {
+            RestoreConfigs(s_EmbeddedConfigs, EMBEDDED_BUTTONS, hidsysGetHidButtonConfigEmbedded, hidsysSetHidButtonConfigEmbedded),
+            RestoreConfigs(s_FullConfigs, FULL_BUTTONS, hidsysGetHidButtonConfigFull, hidsysSetHidButtonConfigFull),
+            RestoreConfigs(s_LeftConfigs, LEFT_BUTTONS, hidsysGetHidButtonConfigLeft, hidsysSetHidButtonConfigLeft),
+            RestoreConfigs(s_RightConfigs, RIGHT_BUTTONS, hidsysGetHidButtonConfigRight, hidsysSetHidButtonConfigRight)
+        };
+        RefreshReverseMappingLocked();
+        for (Result rc : results) {
+            if (R_FAILED(rc)) return rc;
+        }
+        return 0;
     }
 }
 
 Result ButtonRemapper::SetMapping(const char* config_path) {
-    // 读取配置到局部 vector
-    std::vector<ButtonMapping> mappings;
-    LoadMappingsFromConfig(config_path, mappings);
+    std::lock_guard<std::mutex> lock(s_MappingMutex);
+    const auto rules = LoadMappings(config_path);
+    if (rules.empty()) return RestoreMappingsLocked();
 
-    // 如果是空的代表不需要修改配置，直接恢复
-    if (mappings.empty()) {
-        RestoreMapping();
-        return 0;
-    }
-
-    // 获取所有手柄的ID
     HidsysUniquePadId pad_ids[8];
     s32 total = 0;
     Result rc = hidsysGetUniquePadIds(pad_ids, 8, &total);
-    if (R_FAILED(rc) || total == 0) return rc;
-    
-    // 遍历所有手柄
-    for (s32 i = 0; i < total; i++) {
-        // 获取手柄类型
-        HidsysUniquePadType pad_type;
-        rc = hidsysGetUniquePadType(pad_ids[i], &pad_type);
-        if (R_FAILED(rc)) continue;
-        
-        // 根据手柄类型应用映射
-        if (pad_type == HidsysUniquePadType_Embedded || 
-            pad_type == HidsysUniquePadType_DebugPadController) {
-            ApplyMappingsToEmbedded(pad_ids[i], mappings);
-        } else if (pad_type == HidsysUniquePadType_FullKeyController) {
-            ApplyMappingsToFull(pad_ids[i], mappings);
-        } else if (pad_type == HidsysUniquePadType_LeftController) {
-            ApplyMappingsToLeft(pad_ids[i], mappings);
-        } else if (pad_type == HidsysUniquePadType_RightController) {
-            ApplyMappingsToRight(pad_ids[i], mappings);
+    if (R_FAILED(rc)) return rc;
+
+    Result first_error = 0;
+    for (s32 i = 0; i < total; ++i) {
+        HidsysUniquePadType type;
+        rc = hidsysGetUniquePadType(pad_ids[i], &type);
+        if (R_SUCCEEDED(rc)) {
+            switch (type) {
+                case HidsysUniquePadType_Embedded:
+                case HidsysUniquePadType_DebugPadController:
+                    rc = ApplyMappings(pad_ids[i], rules, s_EmbeddedConfigs, EMBEDDED_BUTTONS,
+                                       hidsysGetHidButtonConfigEmbedded, hidsysSetHidButtonConfigEmbedded);
+                    break;
+                case HidsysUniquePadType_FullKeyController:
+                    rc = ApplyMappings(pad_ids[i], rules, s_FullConfigs, FULL_BUTTONS,
+                                       hidsysGetHidButtonConfigFull, hidsysSetHidButtonConfigFull);
+                    break;
+                case HidsysUniquePadType_LeftController:
+                    rc = ApplyMappings(pad_ids[i], rules, s_LeftConfigs, LEFT_BUTTONS,
+                                       hidsysGetHidButtonConfigLeft, hidsysSetHidButtonConfigLeft);
+                    break;
+                case HidsysUniquePadType_RightController:
+                    rc = ApplyMappings(pad_ids[i], rules, s_RightConfigs, RIGHT_BUTTONS,
+                                       hidsysGetHidButtonConfigRight, hidsysSetHidButtonConfigRight);
+                    break;
+            }
         }
+        if (R_FAILED(rc) && R_SUCCEEDED(first_error)) first_error = rc;
     }
-    
-    // 标记映射已启用
-    s_MappingEnabled = true;
-    return 0;
+    RefreshReverseMappingLocked();
+    return first_error;
 }
-
-
 
 Result ButtonRemapper::RestoreMapping() {
-    // 检查映射是否已启用，未启用则无需恢复
-    if (!s_MappingEnabled) return 0;
-    
-    // 恢复所有手柄的默认按键配置
-    Result rc = hidsysSetAllDefaultButtonConfig();
-    if (R_FAILED(rc)) return rc;
-    
-    // 禁用自定义按键配置（使用 0 作为 AppletResourceUserId）
-    rc = hidsysSetAllCustomButtonConfigEnabled(0, false);
-    if (R_SUCCEEDED(rc)) s_MappingEnabled = false;
-    
-    return rc;
+    std::lock_guard<std::mutex> lock(s_MappingMutex);
+    return RestoreMappingsLocked();
 }
 
+Result ButtonRemapper::RefreshReverseMapping() {
+    std::lock_guard<std::mutex> lock(s_MappingMutex);
+    return RefreshReverseMappingLocked();
+}
+
+void ButtonRemapper::ApplyReverseMapping(u64& buttons) {
+    std::lock_guard<std::mutex> lock(s_MappingMutex);
+    u64 to_clear = 0;
+    u64 to_set = 0;
+    for (const auto& mapping : s_ReverseMappings) {
+        if (buttons & mapping.target) {
+            to_clear |= mapping.target;
+            to_set |= mapping.source;
+        }
+    }
+    buttons = (buttons & ~to_clear) | to_set;
+}

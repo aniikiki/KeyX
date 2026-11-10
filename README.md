@@ -81,7 +81,8 @@ Nintendo Switch 按键助手，支持连发、按键重新分配、按键宏和�
 
 - 支持 16 个按键互相映射 (A/B/X/Y/L/R/ZL/ZR/十字键/SELECT/START/L3/R3)
 - 与连发功能可同时启用，不会有冲突
-- **完美避开系统关于按键修改后的警告弹窗**
+- 系统原生映射优先，KeyX 仅修改系统未重映射的按键
+- 暂停、关闭或退出时恢复原有映射，保留系统的截图键 → HOME 等配置
 - 全局配置和游戏独立配置
 - 自动记忆开关状态
 
@@ -234,7 +235,8 @@ The complete plugin consists of Tesla overlay and system module.
 
 - Remap 16 buttons (A/B/X/Y/L/R/ZL/ZR/D-pad/SELECT/START/L3/R3)
 - Works together with turbo without conflicts
-- **Perfectly avoids system warning popups about button changes**
+- Native system mappings take priority over KeyX mappings for the same physical button
+- Pausing, disabling, or exiting restores the original mappings, including system Capture-to-HOME settings
 - Global and per-game configuration
 - Auto-remembers on/off state
 

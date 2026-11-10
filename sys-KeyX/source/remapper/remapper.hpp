@@ -1,48 +1,15 @@
 #pragma once
 #include <switch.h>
-#include <vector>
-
-// 按键映射结构体
-struct ButtonMapping {
-    const char* source;
-    char target[8];
-};
 
 class ButtonRemapper {
 public:
-    // 设置手柄按键映射（从配置文件读取）
+    // 以系统当前映射为基础，应用普通按键规则。
     static Result SetMapping(const char* config_path);
 
-    // 恢复默认按键配置
+    // 只撤销 KeyX 修改的字段，保留系统映射及其启用状态。
     static Result RestoreMapping();
 
-private:
-    // 从配置文件加载映射关系
-    static void LoadMappingsFromConfig(const char* config_path, std::vector<ButtonMapping>& out);
-
-    // 查找按键枚举值（返回-1表示无效）
-    static int FindButton(const char* name);
-    
-    // 应用映射（通用）
-    template<typename ConfigType>
-    static void ApplyMapping(ConfigType& config, const char* from, const char* to);
-    
-    // 应用映射到 Embedded 手柄
-    static void ApplyMappingsToEmbedded(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
-    
-    // 应用映射到 Full 手柄
-    static void ApplyMappingsToFull(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
-    
-    // 应用映射到左 JoyCon
-    static void ApplyMappingsToLeft(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
-    
-    // 应用映射到右 JoyCon
-    static void ApplyMappingsToRight(HidsysUniquePadId pad_id, const std::vector<ButtonMapping>& mappings);
-    
-    // 应用单个映射到左 JoyCon（只处理左侧按键）
-    static void ApplyMappingLeft(HidcfgButtonConfigLeft& config, const char* from, const char* to);
-    
-    // 应用单个映射到右 JoyCon（只处理右侧按键）
-    static void ApplyMappingRight(HidcfgButtonConfigRight& config, const char* from, const char* to);
+    // Lite 的 HDLS 注入使用实际生效的内置手柄映射。
+    static Result RefreshReverseMapping();
+    static void ApplyReverseMapping(u64& buttons);
 };
-

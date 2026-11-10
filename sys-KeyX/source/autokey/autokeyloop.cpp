@@ -1,7 +1,7 @@
 #include "autokeyloop.hpp"
 #include <cstring>
-#include "minIni.h"
 #include "common.hpp"
+#include "remapper.hpp"
 
 namespace {
     // 摇杆伪按键位掩码 (BIT16-23)，必须过滤
@@ -46,12 +46,6 @@ namespace {
 
     // 更新间隔
     constexpr u64 UPDATE_INTERVAL_NS = 1000000ULL;  // 1ms
-    constexpr const char* button_names[] = {
-        "A", "B", "X", "Y",
-        "Up", "Down", "Left", "Right",
-        "L", "R", "ZL", "ZR",
-        "StickL", "StickR", "Start", "Select"
-    };
     
     // 读取手柄状态并应用到结果
     #define READ_NPAD_STATE(StateType, GetFunc, NpadId) \
@@ -84,11 +78,6 @@ AutoKeyLoop::AutoKeyLoop(const char* config_path, const char* macroCfgPath, bool
     m_IsPaused = false;
     m_PauseStateRestored = false;
     
-    // 初始化逆映射表
-    m_MappingCount = 0;
-    memset(m_TargetMasks, 0, sizeof(m_TargetMasks));
-    memset(m_SourceMasks, 0, sizeof(m_SourceMasks));
-    
     // 初始化功能开关
     m_EnableTurbo = enable_turbo;
     m_EnableMacro = enable_macro;
@@ -105,8 +94,8 @@ AutoKeyLoop::AutoKeyLoop(const char* config_path, const char* macroCfgPath, bool
     // 初始化手柄类型
     m_ControllerType = ControllerType::C_NONE;
     
-    // 加载按键映射配置并生成逆映射表
-    UpdateButtonMappings(config_path);
+    // 读取实际生效的按键映射
+    UpdateButtonMappings();
     
     // 初始化线程状态
     m_ThreadCreated = false;
@@ -160,6 +149,7 @@ void AutoKeyLoop::MainLoop() {
             case FeatureEvent::IDLE:
                 break;
             case FeatureEvent::STARTING:
+                UpdateButtonMappings();
                 hiddbgDumpHdlsStates(m_HdlsSessionId, &m_StateList);
                 break;
             case FeatureEvent::Turbo_EXECUTING:
@@ -292,71 +282,9 @@ void AutoKeyLoop::UpdateTouchFeature(bool enable, const char* config_path) {
     m_TouchWasActive = false;
 }
 
-// 按键名转换为掩码
-u64 AutoKeyLoop::ButtonNameToMask(const char* name) const {
-    if (strcmp(name, "A") == 0) return HidNpadButton_A;
-    if (strcmp(name, "B") == 0) return HidNpadButton_B;
-    if (strcmp(name, "X") == 0) return HidNpadButton_X;
-    if (strcmp(name, "Y") == 0) return HidNpadButton_Y;
-    if (strcmp(name, "StickL") == 0) return HidNpadButton_StickL;
-    if (strcmp(name, "StickR") == 0) return HidNpadButton_StickR;
-    if (strcmp(name, "L") == 0) return HidNpadButton_L;
-    if (strcmp(name, "R") == 0) return HidNpadButton_R;
-    if (strcmp(name, "ZL") == 0) return HidNpadButton_ZL;
-    if (strcmp(name, "ZR") == 0) return HidNpadButton_ZR;
-    if (strcmp(name, "Select") == 0 || strcmp(name, "Minus") == 0) return HidNpadButton_Minus;
-    if (strcmp(name, "Start") == 0 || strcmp(name, "Plus") == 0) return HidNpadButton_Plus;
-    if (strcmp(name, "Left") == 0) return HidNpadButton_Left;
-    if (strcmp(name, "Up") == 0) return HidNpadButton_Up;
-    if (strcmp(name, "Right") == 0) return HidNpadButton_Right;
-    if (strcmp(name, "Down") == 0) return HidNpadButton_Down;
-    return 0;
-}
-
-// 更新按键映射配置（生成逆映射表）
-void AutoKeyLoop::UpdateButtonMappings(const char* config_path) {
-    m_MappingCount = 0;
-    for (int i = 0; i < MAX_MAPPINGS; i++) {
-        char target_buf[64];
-        ini_gets("MAPPING", button_names[i], button_names[i], target_buf, sizeof(target_buf), config_path);
-        if (strcmp(button_names[i], target_buf) == 0) continue;
-        u64 source_mask = ButtonNameToMask(button_names[i]);
-        u64 target_mask = ButtonNameToMask(target_buf);
-        if (source_mask == 0 || target_mask == 0) continue;
-        bool found = false;
-        for (int j = 0; j < m_MappingCount; j++) {
-            if (m_TargetMasks[j] == target_mask) {
-                m_SourceMasks[j] = source_mask;  // 覆盖
-                found = true;
-                break;
-            }
-        }
-        if (!found && m_MappingCount < MAX_MAPPINGS) {
-            m_TargetMasks[m_MappingCount] = target_mask;
-            m_SourceMasks[m_MappingCount] = source_mask;
-            m_MappingCount++;
-        }
-    }
-}
-
-// 应用逆映射到按键（两阶段处理：先收集，后应用）
-// 只有lite需要这个，不然映射后连发按键错乱
-// 别问为什么
-void AutoKeyLoop::ApplyReverseMapping(u64& buttons) const {
-    if (m_MappingCount == 0 || buttons == 0) return;
-    u64 to_clear = 0;  // 要清除的按键掩码
-    u64 to_set = 0;    // 要设置的按键掩码
-    // 第一阶段：遍历逆映射表，收集要修改的按键
-    for (int i = 0; i < m_MappingCount; i++) {
-        if (buttons & m_TargetMasks[i]) {
-            to_clear |= m_TargetMasks[i];  // 记录要清除的目标按键
-            to_set |= m_SourceMasks[i];    // 记录要设置的源按键
-        }
-    }
-    // 第二阶段：一次性应用所有修改
-    // 1. 清除所有要映射的按键：buttons & ~to_clear
-    // 2. 设置所有映射后的按键：... | to_set
-    buttons = (buttons & ~to_clear) | to_set;
+// 逆映射必须使用实际生效的配置，避免重放已被系统优先级覆盖的规则。
+void AutoKeyLoop::UpdateButtonMappings() {
+    ButtonRemapper::RefreshReverseMapping();
 }
 
 // 读取物理输入
@@ -467,8 +395,9 @@ void AutoKeyLoop::InjectLite(ProcessResult& result) {
         HiddbgHdlsState state;
         memset(&state, 0, sizeof(HiddbgHdlsState));
         if (device_type == HidDeviceType_DebugPad) {
-            ApplyReverseMapping(result.OtherButtons);
-            state.buttons = result.OtherButtons;
+            u64 buttons = result.OtherButtons;
+            ButtonRemapper::ApplyReverseMapping(buttons);
+            state.buttons = buttons;
             state.analog_stick_l = result.analog_stick_l;
             state.analog_stick_r = result.analog_stick_r;
             hiddbgSetHdlsState(m_StateList.entries[i].handle, &state);
@@ -514,8 +443,9 @@ void AutoKeyLoop::InjectAll(ProcessResult& result) {
             m_StateList.entries[i].state.buttons = result.OtherButtons & RIGHT_JOYCON_BUTTONS;;
             m_StateList.entries[i].state.analog_stick_r = result.analog_stick_r;
         } else {  
-            ApplyReverseMapping(result.OtherButtons);
-            m_StateList.entries[i].state.buttons = result.OtherButtons;
+            u64 buttons = result.OtherButtons;
+            if (device_type == HidDeviceType_DebugPad) ButtonRemapper::ApplyReverseMapping(buttons);
+            m_StateList.entries[i].state.buttons = buttons;
             m_StateList.entries[i].state.analog_stick_l = result.analog_stick_l;
             m_StateList.entries[i].state.analog_stick_r = result.analog_stick_r;
         }
